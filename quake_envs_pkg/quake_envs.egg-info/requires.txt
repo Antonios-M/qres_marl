@@ -1,0 +1,8 @@
+geopandas
+numpy
+networkx
+overpy
+osmnx
+jupyter
+geopy
+openmatrix
