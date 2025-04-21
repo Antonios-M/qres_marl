@@ -17,6 +17,8 @@ import matplotlib.colors as mcolors
 import geopandas as gpd
 import math
 
+from quake_envs.simulations.utils import *
+# print(get_project_root())
 env = gym.make("quake-res-30-v1")
 # traffic_gdf = env.simulation._traffic_links_gdf
 # env.simulation.viz_environment("test", figsize=(15,15), show_road_ids=True)

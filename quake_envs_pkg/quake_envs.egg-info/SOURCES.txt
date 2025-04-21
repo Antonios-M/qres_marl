@@ -1,7 +1,6 @@
 setup.py
 quake_envs/__init__.py
 quake_envs/city_quake_res_10.py
-quake_envs/city_quake_res_30 copy.py
 quake_envs/city_quake_res_30.py
 quake_envs.egg-info/PKG-INFO
 quake_envs.egg-info/SOURCES.txt
