@@ -1,3 +1,5 @@
-from quake_envs.simulations.utils import DamageStates
+x = [False, None, True]
 
-print((DamageStates.to_str(0)))
+x = [False if el is None else el for el in x]
+
+print(x)

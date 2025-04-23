@@ -44,7 +44,7 @@ agent_class = imprl.agents.get_agent_class(ALGORITHM)
 LearningAgent = agent_class(env, alg_config, device)  # initialize agent
 print(f"Loaded default configuration for {ALGORITHM}.")
 
-PROJECT = "qres-marl-test-1"
+PROJECT = "qres-marl-VDN-PS"
 ENTITY = "antoniosmavrotas-tu-delft"
 WANDB_DIR = "./experiments/data"
 # WANDB_DIR = "/scratch/pbhustali"
@@ -52,7 +52,7 @@ WANDB_DIR = "./experiments/data"
 LOGGING_FREQUENCY = 100
 CHECKPT_FREQUENCY = 1_000
 INFERENCING_FREQUENCY = 1_000
-NUM_INFERENCE_EPISODES = 100
+NUM_INFERENCE_EPISODES = 500
 
 
 def parallel_rollout(args):

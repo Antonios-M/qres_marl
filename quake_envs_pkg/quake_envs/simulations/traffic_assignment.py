@@ -928,6 +928,8 @@ class TrafficAccessor:
             if link_idx in traffic_idx_capacity_reduction:
                 max_delta_percentage = traffic_idx_capacity_reduction[link_idx]
                 # Apply the maximum capacity reduction to the link
+                ## UNCOMMENT TO DEBUG:
+                ## if capacity reduction mathces previous and new capacity then traffic assignment works
                 # print('------')
                 # print(max_delta_percentage)
                 # print(self._parent.traffic_calc_net.linkSet[link].capacity)

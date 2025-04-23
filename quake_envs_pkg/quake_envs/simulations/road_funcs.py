@@ -708,7 +708,7 @@ class Road:
         self.time_step_duration = time_step_duration
         self.verbose = verbose
         self.traffic_idx = traffic_idx
-        self.value = 0
+        self.value = 0.0
 
         if self.is_bridge:
             self.initial_repair_time = get_bridge_repair_time(
@@ -747,7 +747,7 @@ class Road:
             done = self.is_fully_repaired
             info = self.__get_info()
             info["road_has_repaired"] = False
-            return state, reward, done, info
+            return info
 
         elif action == RoadAction.REPAIR:
             was_repaired = self.is_fully_repaired
@@ -767,7 +767,7 @@ class Road:
             done = self.is_fully_repaired
             info = self.__get_info()
             info["road_has_repaired"] = road_has_repaired
-            return state, reward, done, info
+            return info
 
         else:
             raise ValueError(f"Invalid action: {action}")

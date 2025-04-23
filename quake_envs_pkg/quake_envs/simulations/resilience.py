@@ -2,116 +2,383 @@ from .building_funcs import Building
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
-
+from .building_funcs import *
+from .road_funcs import *
+from .utils import *
+from .interdep_network import *
+from .traffic_assignment import *
+import pandas as pd
+import geopandas as gpd
 
 class Resilience:
     def __init__(
         self,
-        sum_initial_income: float,
-        sum_current_income: float,
-        sum_current_critical_funcs: float,
-        sum_initial_critical_funcs: float,
-        sum_current_beds: int,
-        sum_initial_beds: int,
-        sum_current_doctors: int,
-        sum_initial_doctors: int,
-        costs: np.ndarray,
+        n_crews: int,
+        time_horizon: int,
+        time_step_duration: int,
+        truck_debris_per_day: float,
         w_econ: float = 0.1,
         w_crit: float = 0.45,
         w_health: float = 0.45,
         w_health_bed: float = 0.5,
-        w_health_doc: float = 0.5,
+        w_health_doc: float = 0.5
 
     ):
-        self._sum_initial_income = sum_initial_income
-        self._sum_current_income = sum_current_income
-        self._sum_current_critical_funcs = sum_current_critical_funcs
-        self._sum_initial_critical_funcs = sum_initial_critical_funcs
-        self._sum_current_beds = sum_current_beds
-        self._sum_initial_beds = sum_initial_beds
-        self._sum_current_doctors = sum_current_doctors
-        self._sum_initial_doctors = sum_initial_doctors
-        self._costs = costs
-        self._w_econ = w_econ
-        self._w_crit = w_crit
-        self._w_health = w_health
-        self._w_bed = w_health_bed
-        self._w_doc = w_health_doc
+        self.time_step_duration = time_step_duration
+        self.trucks_debris_per_day = truck_debris_per_day
+        self.n_crews = n_crews
+        self.time_horizon = time_horizon
+        self.w_econ = w_econ
+        self.w_crit = w_crit
+        self.w_health = w_health
+        self.w_bed = w_health_bed
+        self.w_doc = w_health_doc
+
+        self.simulation = self.__init_simulation()
+        self.num_buildings = self.simulation.num_buildings
+        self.num_roads = self.simulation.num_roads
+
+
+        self.buildings_gdf = self.simulation.ds_to_int(
+            self.simulation.buildings_study(), StudyBuildingSchema.DAMAGE_STATE
+        )
+        self.roads_gdf = self.simulation.ds_to_int(
+            self.simulation.roads_study(), StudyRoadSchema.DAMAGE_STATE
+        )
+        self.buildings_objs = None
+        self.road_objs = None
+        self.earthquake_choices = [7.5, 8.0, 8.5, 9.0]
+        self.info = {}
+
+    def __init_simulation(self) -> InterdependentNetworkSimulation:
+        in_buildings = gpd.read_file(PathUtils.buildings_toy_shp_2)
+        in_roads = gpd.read_file(PathUtils.roads_toy_shp_2)
+        in_traffic_gdf = gpd.read_file(PathUtils.traffic_toy_city_geojson_2)
+        in_traffic_dem = pd.read_csv(PathUtils.traffic_toy_city_demand_2)
+        in_traffic_net = pd.read_csv(PathUtils.traffic_toy_city_network_2)
+        self.quake_IM_bldg_save_prefix = "toy_city_bldg_IM"
+        self.quake_IM_road_save_prefix = "toy_city_road_IMs"
+        sim = InterdependentNetworkSimulation(
+            use_premade=True,
+            buildings_study_gdf=in_buildings,
+            roads_study_gdf=in_roads,
+            traffic_net_df=in_traffic_net,
+            traffic_dem_df=in_traffic_dem,
+            traffic_links_gdf=in_traffic_gdf,
+            verbose=False
+        )
+        sim.buildings_study.get_debris()
+        return sim
+
+    def __simulate_earthquake(self):
+        eq_magnitude = self.eq_magnitude
+        self.simulation.earthquake.predict_building_DS(
+            save_directory=PathUtils.earthquake_model_folder,
+            use_saved_IMs=True,
+            base_name=self.quake_IM_bldg_save_prefix,
+            eq_magnitude=eq_magnitude
+        )
+        self.simulation.earthquake.predict_road_DS(
+            save_directory=PathUtils.earthquake_model_folder,
+            use_saved_IMs=True,
+            base_name=self.quake_IM_road_save_prefix,
+            eq_magnitude=eq_magnitude
+        )
+        self.simulation.earthquake.predict_bridge_DS(
+            save_directory=PathUtils.earthquake_model_folder,
+            use_saved_IMs=True,
+            base_name=self.quake_IM_road_save_prefix,
+            eq_magnitude=eq_magnitude
+        )
+        self.simulation.earthquake.predict_building_RT()
+        self.simulation.earthquake.predict_road_RT()
+        self.simulation.earthquake.predict_bridge_RT()
+        self.building_gdf = self.simulation.buildings_study()
+        self.roads_gdf = self.simulation.roads_study()
+
+        self.buildings_gdf, self.roads_gdf = self.simulation.traffic.update_capacities(
+            buildings_study_gdf=self.buildings_gdf,
+            roads_study_gdf=self.roads_gdf,
+            recalculate=True
+        )
+
+        self.buildings_objs = make_building_objects(
+            buildings_study_gdf=self.buildings_gdf,
+            time_step_duration=self.time_step_duration,
+            trucks_per_day=self.trucks_debris_per_day
+        )
+
+        self.road_objs = make_road_objects(
+            roads_study_gdf=self.roads_gdf,
+            time_step_duration=self.time_step_duration,
+            traffic_net_df=self.simulation.curr_traffic_net_df
+        )
+        self.buildings_objs, self.road_objs = map_capacity_reduction_debris(
+            buildings=self.buildings_objs,
+            roads=self.road_objs
+        )
+        self.simulation.traffic.step_traffic_calc_net(self.road_objs)
+
+    def __get_mean_travel_time(self):
+        traffic_calc_net = self.simulation.traffic_calc_net
+
+        MTT, _ = self.simulation.traffic.user_equilibrium(
+            traffic_calc_net,
+            return_traffic_links_res=True
+        )
+        if hasattr(self, 'initial_mtt'):
+            MTT = max(MTT, self.initial_mtt)
+
+        return MTT
+
+    def __get_traffic_delay_cost(self) -> float:
+        delay_time = max(0, self.current_mtt - self.initial_mtt)
+        yearly_delay_cost = TrafficMonetaryValues.compute_yearly_delay_cost(delay_time=delay_time, sample=False)
+        if yearly_delay_cost > sum([b.max_income for b in self.buildings_objs]):
+            ## cap traffic cost to total community income
+            yearly_delay_cost = sum([b.max_income for b in self.buildings_objs])
+        return yearly_delay_cost
+
+    def get_info(self):
+        info = {
+            "income": sum([b.current_income for b in self.buildings_objs]),
+            "costs": {
+                "buildings_repair_cost":  - sum([b.current_structural_repair_cost for b in self.buildings_objs]),
+                "roads_repair_cost": - sum([r.current_repair_cost for r in self.road_objs]),
+                "traffic_delay_cost": - self.__get_traffic_delay_cost(),
+                "relocation_cost": - sum([b.get_relocation_cost() for b in self.buildings_objs])
+            },
+            "functionalities": {
+                "critical_functionality": sum([b.get_critical_functionality() for b in self.buildings_objs]),
+                "hospital_beds": sum([b.get_hosp_beds() for b in self.buildings_objs]),
+                "doctors": sum([b.get_doctors() for b in self.buildings_objs])
+            }
+        }
+        return info
+
+    def state(self, dtype):
+        return np.concatenate((
+            np.array([b.current_repair_time for b in self.buildings_objs], dtype=dtype),
+            np.array([r.current_repair_time for r in self.road_objs], dtype=dtype)
+        ))
+
+    def reset(
+        self,
+        eq_magnitude: int
+    ):
+        self.time = 0
+        self.simulation.traffic_calc_net.reset()
+        self.initial_mtt = self.__get_mean_travel_time()
+        self.current_mtt = self.initial_mtt
+        self.eq_magnitude = eq_magnitude
+        self.__simulate_earthquake()
+        self.current_mtt = self.__get_mean_travel_time()
+        self.__update_component_values()
+
+        self.initial_income = sum([b.max_income for b in self.buildings_objs])
+        self.initial_critical_func = sum([b.initial_critical_func for b in self.buildings_objs])
+        self.initial_beds = sum([b.initial_beds for b in self.buildings_objs])
+        self.initial_doctors = sum([b.initial_doctors for b in self.buildings_objs])
+
+        return self.q_community_decomp
 
     def step(self,
-        sum_income: float,
-        sum_critical_funcs: float,
-        sum_beds: int,
-        sum_doctors: int,
-        costs: np.ndarray,
-
+        actions: tuple
     ) -> None:
-        """Update functionality """
-        self._sum_current_income = sum_income
-        self._sum_current_critical_funcs = sum_critical_funcs
-        self._sum_current_beds = sum_beds
-        self._sum_current_doctors = sum_doctors
-        self._costs = costs
+        actions = self.__prioritise_actions(np.array(actions))
+        self.info_buildings = [{} for _ in self.buildings_objs]
+        self.info_roads = [{} for _ in self.road_objs]
 
-    @property
-    def q_community(self) -> float:
-        """Calculate the overall community functionality"""
-        return self._w_econ * self.q_econ + self._w_crit * self.q_crit + self._w_health * self.q_health
+        for agent, action in enumerate(list(actions)):
+            if agent < self.num_buildings:
+                building = self.buildings_objs[agent]
+                building_info = building.step(BuildingAction(action))
+                self.info_buildings[agent] = building_info
+            else:
+                road = self.road_objs[agent - self.num_buildings]
+                dependant_buildings = [
+                    b for b in self.buildings_objs if b.access_road_id == road.id
+                ]
+                road_info = road.step(RoadAction(action), dependant_buildings=dependant_buildings)
+                self.info_roads[agent - self.num_buildings] = road_info
+
+        self.buildings_objs, self.road_objs = map_capacity_reduction_debris(
+            buildings=self.buildings_objs,
+            roads = self.road_objs
+        )
+        self.simulation.traffic.step_traffic_calc_net(self.road_objs)
+        self.current_mtt = min(self.__get_mean_travel_time(), self.current_mtt)
+        self.__update_component_values()
+        self.time += 1
+
+        q_community, q_econ, q_crit, q_health = self.q_community_decomp
+        bldg_repairs_completed = [d["repair_has_finished"] for d in self.info_buildings]
+        bldg_repairs_completed = [False if rep is None else rep for rep in bldg_repairs_completed]
+
+        road_repairs_completed = [d["road_has_repaired"] for d in self.info_roads]
+        road_repairs_completed = [False if rep is None else rep for rep in road_repairs_completed]
+
+        bldg_debris_cleared = [d["debris_has_cleared"] for d in self.info_buildings]
+        bldg_debris_cleared = [False if clear is None else clear for clear in bldg_debris_cleared]
+
+        bldg_funcs_restored = [d["functionality_has_restored"] for d in self.info_buildings]
+        bldg_funcs_restored = [False if clear is None else clear for clear in bldg_funcs_restored]
+
+        q_econ_components = self.q_econ[1]
+
+        return {
+            "q": {
+                "community": q_community,
+                "econ": q_econ,
+                "crit": q_crit,
+                "health": q_health
+            },
+            "q_econ_components": q_econ_components,
+            "completions": {
+                "bldg_repairs": bldg_repairs_completed,
+                "road_repairs": road_repairs_completed,
+                "bldg_debris": bldg_debris_cleared,
+                "bldg_funcs": bldg_funcs_restored
+            }
+        }
+
 
     @property
     def q_community_decomp(self) -> Tuple[float, float, float]:
+        q_community = self.w_econ * self.q_econ[0] + self.w_crit * self.q_crit + self.w_health * self.q_health
         return (
-            self.q_community,
-            self._w_econ * self.q_econ,
-            self._w_crit * self.q_crit,
-            self._w_health * self.q_health,
+            q_community,
+            self.w_econ * self.q_econ[0],
+            self.w_crit * self.q_crit,
+            self.w_health * self.q_health,
         )
-    # @property
-    # def q_econ(self) -> float:
-    #     """
-    #     "Calculate the economic functionality
-    #     q_econ(t) = BCR(t) = (q_inc(t) - q_inc(t-1)) / Σ(costs(t))""
-    #     """
-    #     bcr = (self._sum_current_income - np.sum(self._costs)) / self._sum_initial_income
-    #     return bcr
 
     @property
-    def q_econ_components(self) -> dict:
+    def q_econ(self) -> tuple:
         """
         Decomposes the economic functionality (BCR) into:
         - Income contribution
         - Cost contributions (negative)
         Returns a dict where all values sum up to q_econ.
         """
-        income_term = self._sum_current_income / self._sum_initial_income
-        cost_names = ['building_repair', 'road_repair', 'traffic_delay', 'relocation']
+        info = self.get_info()
+
+        # Income term: normalized by initial income
+        income_term = info["income"] / self.initial_income
+
+        # Cost terms: each already negative in get_info, normalize by initial income
+        costs = info["costs"]
         cost_terms = {
-            name: -cost / self._sum_initial_income
-            for name, cost in zip(cost_names, self._costs)
+            name: cost / self.initial_income
+            for name, cost in costs.items()
         }
+
+        # Assemble components
         components = {'income': income_term}
         components.update(cost_terms)
-        return components
 
-    @property
-    def q_econ(self) -> float:
-        """
-        Total economic functionality (BCR), equal to the sum of components.
-        """
-        return (sum(self.q_econ_components.values()))
+        return (
+            sum(components.values()),
+            components
+        )
 
     @property
     def q_crit(self) -> float:
         """Calculate the critical functionality"""
-        return self._sum_current_critical_funcs / self._sum_initial_critical_funcs
+        info = self.get_info()
+        return info["functionalities"]["critical_functionality"] / self.initial_critical_func
 
     @property
     def q_health(
         self,
     ) -> float:
-        q_beds = 0.0 if self._sum_initial_beds == 0 else self._sum_current_beds / self._sum_initial_beds
-        q_doctors = 0.0 if self._sum_initial_doctors == 0 else self._sum_current_doctors / self._sum_initial_doctors
-        q_health = self._w_bed * q_beds + self._w_doc * q_doctors
+        info = self.get_info()
+        beds = info["functionalities"]["hospital_beds"]
+        doctors = info["functionalities"]["doctors"]
+        q_beds = 0.0 if self.initial_beds == 0 else beds / self.initial_beds
+        q_doctors = 0.0 if self.initial_doctors == 0 else doctors / self.initial_doctors
+        q_health = self.w_bed * q_beds + self.w_doc * q_doctors
         return q_health
+
+    @property
+    def terminated(self):
+        dones_buildings = [b.is_functional for b in self.buildings_objs]
+        dones_roads = [r.is_fully_repaired for r in self.road_objs]
+
+        are_buildings_done = all(dones_buildings)
+        are_roads_done = all(dones_roads)
+
+        return are_buildings_done and are_roads_done
+
+    @property
+    def truncated(self):
+        if self.time >= self.time_horizon:
+            return True
+        else:
+            return False
+
+    def __update_component_values(self):
+        max_capacity = max([road.capacity for road in self.road_objs])
+        for road in self.road_objs:
+            value = get_road_value(
+                capacity=road.capacity,
+                damage_state=road.current_damage_state,
+                max_capacity=max_capacity,
+                max_damage_state=max([ds.value for ds in DamageStates])
+            )
+            road.value = value
+
+        nominal_income = max([building.max_income for building in self.buildings_objs])
+        nominal_sqft = max([building.sqft for building in self.buildings_objs])
+        for building in self.buildings_objs:
+            value = get_building_value(
+                undisturbed_income=building.max_income,
+                nominal_income=nominal_income,
+                sqft=building.sqft,
+                nominal_sqft=nominal_sqft,
+                is_essential=building.is_essential,
+                damage_state=building.current_damage_state,
+            )
+            building.value = value
+
+    def __prioritise_actions(
+        self,
+        actions: np.ndarray
+    ) -> np.ndarray:
+        # Split actions
+        building_actions = actions[:self.num_buildings]
+        road_actions = actions[self.num_roads:]
+
+        # Collect active (non-null) actions with their original index and value
+        indexed_actions = []
+
+        for i, action in enumerate(building_actions):
+            if BuildingAction(action) != BuildingAction.DO_NOTHING:
+                value = self.buildings_objs[i].value
+                indexed_actions.append((i, value))
+
+        for i, action in enumerate(road_actions):
+            if RoadAction(action) not in  [RoadAction.DO_NOTHING, RoadAction.DO_NOTHING_temp] :
+                value = self.road_objs[i].value
+                indexed_actions.append((self.num_buildings + i, value))
+
+        # Sort by value descending
+        indexed_actions.sort(key=lambda x: x[1], reverse=True)
+
+        # Keep only top `n_crews` indices
+        top_indices = set(idx for idx, _ in indexed_actions[:self.n_crews])
+
+        # Zero out or set NULL for actions not in top_indices
+        pruned_actions = actions.copy()
+        for i in range(len(pruned_actions)):
+            if i not in top_indices:
+                if i < self.num_buildings:
+                    pruned_actions[i] = BuildingAction.DO_NOTHING.value
+                else:
+                    pruned_actions[i] = RoadAction.DO_NOTHING.value
+
+        return pruned_actions
+
+
 
 

@@ -1117,12 +1117,12 @@ class Building:
         self.time_step_after_repair = -1
 
         self.initial_beds = get_hosp_beds(self.sqft, self.occtype)
-        self.current_beds = self.__get_hosp_beds()
+        self.current_beds = self.get_hosp_beds()
 
         self.initial_doctors = get_num_doctors(self.sqft, self.occtype)
-        self.current_doctors = self.__get_doctors()
+        self.current_doctors = self.get_doctors()
 
-        self.current_critical_func = self.__get_critical_functionality()
+        self.current_critical_func = self.get_critical_functionality()
 
 
 
@@ -1195,13 +1195,12 @@ class Building:
         if action == BuildingAction.DO_NOTHING:
             self.__log(f'Building {self.id} is doing nothing')
             state = self.current_repair_time
-            reward = self.__get_functionality_metrics()
             done = self.is_functional
             info = self.__get_info()
             info["repair_has_finished"] = False
             info["debris_has_cleared"] = False
             info["functionality_has_restored"] = False
-            return state, reward, done, info
+            return info
 
         elif action == BuildingAction.CLEAR_DEBRIS:
             had_debris = self.has_debris
@@ -1227,12 +1226,11 @@ class Building:
                 functionality_restored = True
 
             state = self.current_repair_time
-            functionality = self.__get_functionality_metrics()
             done = self.is_functional
             info = self.__get_info()
             info["debris_has_cleared"] = debris_cleared
             info["functionality_has_restored"] = functionality_restored
-            return state, functionality, done, info
+            return info
 
         elif action == BuildingAction.REPAIR:
             was_repaired = self.is_fully_repaired
@@ -1257,13 +1255,12 @@ class Building:
                 functionality_restored = True
 
             state = self.current_repair_time
-            functionality = self.__get_functionality_metrics()
             done = self.is_functional
             info = self.__get_info()
             info["repair_has_finished"] = repair_finished
             info["functionality_has_restored"] = functionality_restored
             self.is_under_repair = False
-            return state, functionality, done, info
+            return info
 
         else:
             raise ValueError(f'Invalid action: {action}')
@@ -1284,7 +1281,7 @@ class Building:
         }
         return info
 
-    def __get_relocation_cost(self):
+    def get_relocation_cost(self):
         if self.is_fully_repaired:
             self.current_relocation_cost = 0.0
         else:
@@ -1298,7 +1295,7 @@ class Building:
             )
         return self.current_relocation_cost
 
-    def __get_critical_functionality(self):
+    def get_critical_functionality(self):
         if self.occtype in ESSENTIAL_FACILITY_OCC_TYPES:
             self.initial_critical_func = 1.0
 
@@ -1321,7 +1318,7 @@ class Building:
         self.current_critical_func = 0.0
         return 0.0
 
-    def __get_hosp_beds(self):
+    def get_hosp_beds(self):
         # Damage-to-bed availability mapping
         damage_factor = {
             0: 1.0,
@@ -1335,24 +1332,19 @@ class Building:
 
         return self.current_beds
 
-    def __get_doctors(self):
-        if self.initial_doctors <= 0 or self.current_damage_state >= 3:
-            return 0
-        else:
-            damage_factor = {0: 1, 1: 0.5, 2: 0.75}.get(
-                self.current_damage_state, 1
-            )
-            return self.initial_doctors * damage_factor
+    def get_doctors(self):
+        # Damage-to-bed availability mapping
+        damage_factor = {
+            0: 1.0,
+            1: 0.75,
+            2: 0.3,
+            3: 0.1,
+            4: 0.0
+        }.get(self.current_damage_state)
 
-    def __get_functionality_metrics(self):
-        return [
-            self.current_structural_repair_cost, #0
-            self.__get_relocation_cost(), #1
-            self.current_income, #2
-            self.__get_critical_functionality(), #3
-            self.__get_hosp_beds(), #4
-            self.__get_doctors() #5
-        ]
+        self.current_doctors = int(self.initial_doctors * damage_factor)
+
+        return self.current_doctors
 
     def __step_debris(self):
         assert not self.is_fully_repaired
