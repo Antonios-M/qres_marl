@@ -44,7 +44,7 @@ agent_class = imprl.agents.get_agent_class(ALGORITHM)
 LearningAgent = agent_class(env, alg_config, device)  # initialize agent
 print(f"Loaded default configuration for {ALGORITHM}.")
 
-PROJECT = "qres-marl-VDN-PS"
+PROJECT = "main-VDN-PS"
 ENTITY = "antoniosmavrotas-tu-delft"
 WANDB_DIR = "./experiments/data"
 # WANDB_DIR = "/scratch/pbhustali"
@@ -69,7 +69,7 @@ if __name__ == "__main__":
     # logging and checkpointing
     training_log = {}  # log for training metrics
 
-    best_cost = math.inf
+    best_reward = -math.inf  # Initialize to negative infinity
     best_checkpt = 0
     is_time_to_checkpoint = (
         lambda ep: ep % CHECKPT_FREQUENCY == 0 or ep == wandb.config.NUM_EPISODES - 1
@@ -100,7 +100,6 @@ if __name__ == "__main__":
 
     # training loop
     for ep in range(alg_config["NUM_EPISODES"]):
-        print(f"Episode {ep}/{alg_config['NUM_EPISODES']}")
 
         episode_return = training_rollout(env, LearningAgent)
 
@@ -124,8 +123,9 @@ if __name__ == "__main__":
             _mean = np.mean(eval_costs)
             _stderr = np.std(eval_costs) / np.sqrt(len(eval_costs))
 
-            if _mean < best_cost:
-                best_cost = _mean
+            # Directly track maximum reward (no negation needed)
+            if _mean > best_reward:
+                best_reward = _mean
                 best_checkpt = ep
 
             training_log.update(
@@ -133,7 +133,7 @@ if __name__ == "__main__":
                     "inference_ep": ep,
                     "inference_mean": _mean,
                     "inference_stderr": _stderr,
-                    "best_cost": best_cost,
+                    "best_reward": best_reward,
                     "best_checkpt": best_checkpt,
                 }
             )
@@ -146,3 +146,10 @@ if __name__ == "__main__":
             wandb.log(training_log, step=ep)  # log to wandb
 
     print(f"Total time: {time.time()-time0:.2f}")
+
+
+
+
+
+
+

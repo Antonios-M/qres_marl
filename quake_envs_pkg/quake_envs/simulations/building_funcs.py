@@ -1412,12 +1412,16 @@ class Building:
 
         if self.current_loss_of_function_time == 0:
             self.is_functional = True
-            income_increase = self.income_loss
             self.current_income = self.max_income
         else:
-            functionality_change = time_step_duration / self.current_loss_of_function_time
-            income_increase = functionality_change * (self.max_income - self.current_income)
-            self.current_income += income_increase
+            functionality_change = max(1.0, time_step_duration / self.current_loss_of_function_time)
+            if functionality_change == 1.0:
+                self.current_income = self.max_income
+                return
+            else:
+                income_increase = functionality_change * (self.max_income - self.current_income)
+                self.current_income = min(self.max_income, self.current_income + max(0.0, income_increase))
+
 
     def __log(
         self,

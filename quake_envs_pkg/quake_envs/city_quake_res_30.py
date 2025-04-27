@@ -48,11 +48,12 @@ class Quake_Res_30(gym.Env):
     ):
         self.dtype = np.float32
         self.verbose = verbose
-        self.time_step_duration = 300
+        self.time_step_duration = 150
         self.trucks_per_building_per_day = 0.5
         self.n_agents = 30
         self.n_crews = 25
         self.time_horizon = 20
+        self.baselines ={}
 
         self.resilience = Resilience(
             n_crews=self.n_crews,
@@ -98,8 +99,7 @@ class Quake_Res_30(gym.Env):
         func_crit_difference = current_func_crit - self.functionality_crit
         func_health_difference = current_func_health - self.functionality_health
 
-        reward = func_difference
-
+        reward = np.float32(func_difference)
 
         self.functionality = current_func
         self.functionality_econ = current_func_econ
@@ -110,6 +110,7 @@ class Quake_Res_30(gym.Env):
         truncated = self.resilience.truncated
 
         info["reward"] = {
+            "total": reward,
             "econ": func_econ_difference,
             "crit": func_crit_difference,
             "health": func_health_difference
@@ -140,14 +141,15 @@ class Quake_Res_30(gym.Env):
 
     def plot_rollout(
         self,
+        plot_econ_income=False,
         plot_econ_bldg_repair=False,
         plot_econ_road_repair=False,
         plot_econ_traffic=False,
         plot_econ_relocation=False,
         figsize=(10, 6),
-        agent=None
+        agent=None ## this is where trained agents are passed to be used during inference, see imprl-infinite-horizon:examples:inference.py
     ):
-        padding_length = int(0.3 * self.time_horizon)
+        padding_length = int(0.2 * self.time_horizon)
         # Reset environment and set up padding
         obs, info = self.reset()
 
@@ -157,6 +159,7 @@ class Quake_Res_30(gym.Env):
         returns_health = [0.0] * padding_length
         q_community_values = [1.0] * padding_length
         q_econ_values = [1.0] * padding_length
+        q_income_values = [1.0] * padding_length
         q_econ_bldg_repair_costs = [1.0] * padding_length
         q_econ_road_repair_costs = [1.0] * padding_length
         q_econ_traffic_delay_costs = [1.0] * padding_length
@@ -184,8 +187,9 @@ class Quake_Res_30(gym.Env):
                 action = tuple(action)
             else:
                 action = self.action_space.sample()
-            obs, reward, has_terminated, has_truncated, info = self.step(action)
+            obs, cost, has_terminated, has_truncated, info = self.step(action)
 
+            reward = info["reward"]["total"]
             reward_econ = info["reward"]["econ"]
             reward_crit = info["reward"]["crit"]
             reward_health = info["reward"]["health"]
@@ -193,6 +197,7 @@ class Quake_Res_30(gym.Env):
             q_econ = info["q"]["econ"]
             q_crit = info["q"]["crit"]
             q_health = info["q"]["health"]
+            q_econ_bldg_income = info["q_econ_components"]["income"]
             q_econ_bldg_repair = info["q_econ_components"]["buildings_repair_cost"]
             q_econ_road_repair = info["q_econ_components"]["roads_repair_cost"]
             q_econ_traffic = info["q_econ_components"]["traffic_delay_cost"]
@@ -210,6 +215,7 @@ class Quake_Res_30(gym.Env):
             q_community_values.append(q_community)
             q_econ_values.append(q_econ)
             q_econ_bldg_repair_costs.append(q_econ_bldg_repair)
+            q_income_values.append(q_econ_bldg_income)
             q_econ_road_repair_costs.append(q_econ_road_repair)
             q_econ_traffic_delay_costs.append(q_econ_traffic)
             q_econ_relocation_costs.append(q_econ_bldg_relocation)
@@ -222,7 +228,7 @@ class Quake_Res_30(gym.Env):
             time.append(current_time)
             current_time += 1
 
-        all_data = [returns, returns_econ, returns_crit, returns_health, q_community_values, q_econ_values, q_econ_bldg_repair_costs, q_econ_road_repair_costs, q_econ_traffic_delay_costs, q_econ_relocation_costs, q_crit_values, q_health_values, bldg_repairs_counts, road_repair_counts, debris_clear_counts, func_rest_counts]
+        all_data = [returns, returns_econ, returns_crit, returns_health, q_community_values, q_econ_values, q_income_values,  q_econ_bldg_repair_costs, q_econ_road_repair_costs, q_econ_traffic_delay_costs, q_econ_relocation_costs, q_crit_values, q_health_values, bldg_repairs_counts, road_repair_counts, debris_clear_counts, func_rest_counts]
         time.extend(range(current_time, current_time + padding_length))
 
         # Add padding at the end
@@ -298,6 +304,8 @@ class Quake_Res_30(gym.Env):
             sns.lineplot(x=time, y=q_health_values, ax=ax, label='Healthcare Functionality', color=color_health, linewidth=1.5, zorder=10)
 
         def plot_sub_econ_functionalities(ax):
+            if plot_econ_income:
+                sns.lineplot(x=time, y=q_income_values, ax=ax, label="Total Income", color='green', linewidth=0.75, zorder=10)
             if plot_econ_bldg_repair:
                 sns.lineplot(x=time, y=q_econ_bldg_repair_costs, ax=ax, label='Building Repair Costs', color='darkgreen', linestyle=(0, (1, 3)), linewidth=0.75, zorder=10)
             if plot_econ_road_repair:
@@ -390,6 +398,7 @@ class Quake_Res_30(gym.Env):
                     plotted_labels['Road Repairs'] = True
 
         plot_markers()
+
         def plot_reward():
             # Split time and returns
             time_np = np.array(time)
@@ -404,9 +413,9 @@ class Quake_Res_30(gym.Env):
                 x=time_np[post_zero_mask],
                 y=returns_np[post_zero_mask],
                 ax=ax_rewards,
-                label="Cumulative Agent Rewards",
+                label="Instantaneous Agent Rewards",
                 color=color_community,
-                linewidth=1.0,
+                linewidth=2.0,
                 zorder=20
             )
             sns.lineplot(
@@ -437,10 +446,10 @@ class Quake_Res_30(gym.Env):
                 zorder=10
             )
             # Final touches
-            ax_rewards.set_ylabel("Cumulative Rewards")
+            ax_rewards.set_ylabel("Instantaneous Agent Rewards")
             ax_rewards.set_xlabel(f'Time Step / {self.time_step_duration} days')
             ax_rewards.legend(loc='upper right')
-            ax_rewards.set_ylim(returns_np.min() - 0.1, returns_np.max() + 0.1)
+            ax_rewards.set_ylim(returns_np.min() - 0.1 * returns_np.max(), returns_np.max() + 0.1 * returns_np.max())
 
         plot_reward()
         # Legend setup
@@ -461,7 +470,7 @@ class Quake_Res_30(gym.Env):
         # Only do this if you have space for the legend and want the lines explained
         # If the main plot already has a legend, you might want to skip this to avoid clutter
         ax_rewards.legend(loc='upper right')  # or 'best', or wherever looks best in your case
-
+        ax_main.set_ylabel("Aggregate Functionality Metrics")
         fig.suptitle(
             r"$\bf{Earthquake\ Repair\ Scheduling\ Rollout}$" + "\n"
             + r"$\it{toy\text{-}city\text{-}" + str(self.num_components) + r"}$" + "\n"

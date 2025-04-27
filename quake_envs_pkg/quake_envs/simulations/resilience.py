@@ -173,7 +173,7 @@ class Resilience:
         self.eq_magnitude = eq_magnitude
         self.__simulate_earthquake()
         self.current_mtt = self.__get_mean_travel_time()
-        self.__update_component_values()
+        self.__assign_random_normalized_ranks()
 
         self.initial_income = sum([b.max_income for b in self.buildings_objs])
         self.initial_critical_func = sum([b.initial_critical_func for b in self.buildings_objs])
@@ -208,7 +208,7 @@ class Resilience:
         )
         self.simulation.traffic.step_traffic_calc_net(self.road_objs)
         self.current_mtt = min(self.__get_mean_travel_time(), self.current_mtt)
-        self.__update_component_values()
+        self.__assign_random_normalized_ranks()
         self.time += 1
 
         q_community, q_econ, q_crit, q_health = self.q_community_decomp
@@ -245,7 +245,7 @@ class Resilience:
 
     @property
     def q_community_decomp(self) -> Tuple[float, float, float]:
-        q_community = self.w_econ * self.q_econ[0] + self.w_crit * self.q_crit + self.w_health * self.q_health
+        q_community = min(1.0, self.w_econ * self.q_econ[0] + self.w_crit * self.q_crit + self.w_health * self.q_health)
         return (
             q_community,
             self.w_econ * self.q_econ[0],
@@ -317,29 +317,21 @@ class Resilience:
         else:
             return False
 
-    def __update_component_values(self):
-        max_capacity = max([road.capacity for road in self.road_objs])
-        for road in self.road_objs:
-            value = get_road_value(
-                capacity=road.capacity,
-                damage_state=road.current_damage_state,
-                max_capacity=max_capacity,
-                max_damage_state=max([ds.value for ds in DamageStates])
-            )
-            road.value = value
+    def __assign_random_normalized_ranks(self):
+        """
+        Assigns a unique random rank (normalized between 0 and 1) to each road and building.
+        The highest rank gets a value of 1.0, lowest gets 0.0.
+        """
+        all_objects = self.road_objs + self.buildings_objs
+        total_items = len(all_objects)
 
-        nominal_income = max([building.max_income for building in self.buildings_objs])
-        nominal_sqft = max([building.sqft for building in self.buildings_objs])
-        for building in self.buildings_objs:
-            value = get_building_value(
-                undisturbed_income=building.max_income,
-                nominal_income=nominal_income,
-                sqft=building.sqft,
-                nominal_sqft=nominal_sqft,
-                is_essential=building.is_essential,
-                damage_state=building.current_damage_state,
-            )
-            building.value = value
+        if total_items == 0:
+            return
+
+        random.shuffle(all_objects)
+
+        for i, obj in enumerate(all_objects):
+            obj.value = i / (total_items - 1) if total_items > 1 else 0.0
 
     def __prioritise_actions(
         self,
@@ -349,7 +341,7 @@ class Resilience:
         building_actions = actions[:self.num_buildings]
         road_actions = actions[self.num_roads:]
 
-        # Collect active (non-null) actions with their original index and value
+            # Collect active (non-null) actions with their original index and value
         indexed_actions = []
 
         for i, action in enumerate(building_actions):
