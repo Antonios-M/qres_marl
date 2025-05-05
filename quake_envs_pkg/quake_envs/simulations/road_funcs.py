@@ -640,6 +640,9 @@ class StudyRoadsAccessor:
         if self._parent.verbose:
             print(message)
 
+
+
+
 class RoadAction(Enum):
     """
     Enum representing possible actions for a road in an RL environment.
@@ -651,25 +654,14 @@ class RoadAction(Enum):
     """
     DO_NOTHING = 0  # No action taken
     REPAIR = 1  # Small-scale repairs
-    DO_NOTHING_temp = 2
-    # MAJOR_REPAIR = 2  # Extensive repairs
+    # DO_NOTHING_temp = 2
+    # # MAJOR_REPAIR = 2  # Extensive repairs
 
     def __str__(self):
         """Returns a human-readable string representation of the action."""
         return self.name.replace("_", " ").title()  # "REPAIR" -> "Minor Repair"
 
-
-def get_road_value(
-    capacity: float,
-    damage_state: int,
-    max_capacity: float,
-    max_damage_state: int,
-) -> float:
-    return (capacity * damage_state) / (max_capacity * max_damage_state)
-
 class Road:
-
-
     def __init__(
         self,
         id,
@@ -695,56 +687,29 @@ class Road:
         self.is_bridge = is_bridge
         self.road_class = hazus_road_class
         self.bridge_class = hazus_bridge_class
-        self.damage_state = damage_state
+        self.initial_damage_state = 4
         self.capacity = capacity
-        self.current_damage_state = self.damage_state
+        self.current_damage_state = self.initial_damage_state
         self.length_miles = length_miles
         self.hazus_road_class = hazus_road_class
-        self.capacity_red_debris = capacity_red_debris
-        self.capacity_red_damage_state = capacity_red_damage_state
+        self.capacity_red_debris = 0.0
+        self.capacity_red_damage_state = 1.0
         self.capacity_reduction = max(self.capacity_red_damage_state, self.capacity_red_debris)
-        self.is_fully_repaired = self.capacity_red_damage_state == 0.0
-        self.is_debris_free = self.capacity_red_debris == 0.0
+        self.is_fully_repaired = False
+        self.is_debris_free = True
         self.time_step_duration = time_step_duration
         self.verbose = verbose
         self.traffic_idx = traffic_idx
         self.value = 0.0
+        self.initial_repair_time = 200
+        self.current_repair_time = 200
+        self.initial_repair_cost = 1000
+        self.current_repair_cost = 1000
 
-        if self.is_bridge:
-            self.initial_repair_time = get_bridge_repair_time(
-                self.damage_state
-            )
-            self.current_repair_time = self.initial_repair_time
-            self.initial_repair_cost = get_bridge_repair_cost(
-                self.bridge_class,
-                self.damage_state
-            )
-            self.current_repair_cost = self.initial_repair_cost
-        else:
-            self.initial_repair_time = get_road_repair_time(
-                self.damage_state
-            )
-            self.current_repair_time = self.initial_repair_time
-            self.initial_repair_cost = get_road_repair_cost(
-                self.road_class,
-                self.damage_state,
-                self.length_miles
-            )
-            self.current_repair_cost = self.initial_repair_cost
-
-    def step(
-        self,
-        action: RoadAction,
-        dependant_buildings: List[Building]
-    ):
-        self.__log(f"Stepping road object: {self.id} with action: {action}")
+    def step(self, action: RoadAction, dependant_buildings: List[Building]):
         self.dependant_buildings = dependant_buildings
-
-        if action == RoadAction.DO_NOTHING or action == RoadAction.DO_NOTHING_temp:
+        if action == RoadAction.DO_NOTHING:
             self.__log(f"Road {self.id} is doing nothing")
-            state = self.current_repair_time
-            reward = 0.0 ## reward for the transportation network is taken from the traffic model
-            done = self.is_fully_repaired
             info = self.__get_info()
             info["road_has_repaired"] = False
             return info
@@ -754,17 +719,13 @@ class Road:
             self.__log(f"Road {self.id} is undergoing minor repair")
             try:
                 repair_cost = self.__step_repair()
-                reward = repair_cost
             except Exception as e:
-                reward = 0.0
                 self.__log(f"Road already repaired,: {str(e)}")
 
             if was_repaired == self.is_fully_repaired:
                 road_has_repaired = False
             else:
                 road_has_repaired = True
-            state = self.current_repair_time
-            done = self.is_fully_repaired
             info = self.__get_info()
             info["road_has_repaired"] = road_has_repaired
             return info
@@ -779,29 +740,38 @@ class Road:
 
         time_step_duration = self.time_step_duration
         remaining_repair_time = max(0, self.current_repair_time - time_step_duration)
-        self.current_repair_time = remaining_repair_time
 
+        self.current_repair_time = remaining_repair_time
         if self.current_repair_time == 0:
             self.is_fully_repaired = True
             self.current_repair_cost = 0
+            self.current_damage_state = 0
             self.capacity_red_damage_state = 0.0
             self.capacity_reduction = max(self.capacity_red_damage_state, self.capacity_red_debris)
             return 0
         else:
-            repair_change = time_step_duration / self.current_repair_time
-            damage_state_change = self.current_damage_state * repair_change
-            self.current_damage_state = max(math.ceil(
-                self.current_damage_state - damage_state_change
-            ), 0)
+            repair_change = time_step_duration / self.initial_repair_time
+            self.__step_damage_state()
             repair_cost = repair_change * self.current_repair_cost
-            remaining_repair_cost = max(0, self.current_repair_cost - repair_cost)
-            self.current_repair_cost = remaining_repair_cost
+            self.current_repair_cost = max(0, self.current_repair_cost - repair_cost)
             self.capacity_red_damage_state = round(
                 max(0.0, (
                     self.capacity_red_damage_state - (repair_change * self.capacity_red_damage_state)
                 )), 3)
             self.capacity_reduction = max(self.capacity_red_damage_state, self.capacity_red_debris)
             return self.current_repair_cost
+
+    def __step_damage_state(self):
+        steps = self.initial_damage_state
+        if steps <= 0:
+            return self.initial_damage_state
+
+        days_per_step = self.initial_repair_time / steps
+        completed_repair_days = self.initial_repair_time - self.current_repair_time
+
+        levels_repaired = int(completed_repair_days // days_per_step)
+
+        self.current_damage_state = max(self.initial_damage_state - levels_repaired, 0)
 
     def __get_info(self):
         info = {
@@ -822,17 +792,186 @@ class Road:
         if self.verbose:
             print(msg)
 
-    def __str__(self):
-        return (
-            f"Road ID: {self.id}\n"
-            f"Type: {'Bridge' if self.is_bridge else 'Road'}\n"
-            f"Damage State: {self.damage_state}\n"
-            f"Length (miles): {self.length_miles}\n"
-            f"HAZUS Road Class: {self.hazus_road_class}\n"
-            f"HAZUS Bridge Class: {self.bridge_class}\n"
-            f"Repair Time: {self.repair_time} days\n"
-            f"Repair Cost: ${self.repair_cost:,.2f}"
-        )
+
+
+
+
+# class Road:
+#     def __init__(
+#         self,
+#         id,
+#         init_node: int,
+#         term_node: int,
+#         flow: float,
+#         damage_state,
+#         capacity,
+#         length_miles,
+#         hazus_road_class,
+#         hazus_bridge_class,
+#         is_bridge,
+#         capacity_red_debris,
+#         capacity_red_damage_state,
+#         time_step_duration,
+#         traffic_idx,
+#         verbose=False
+#     ):
+#         self.id = id
+#         self.init_node = init_node
+#         self.term_node = term_node
+#         self.flow = flow
+#         self.is_bridge = is_bridge
+#         self.road_class = hazus_road_class
+#         self.bridge_class = hazus_bridge_class
+#         self.initial_damage_state = damage_state
+#         self.capacity = capacity
+#         self.current_damage_state = self.initial_damage_state
+#         self.length_miles = length_miles
+#         self.hazus_road_class = hazus_road_class
+#         self.capacity_red_debris = capacity_red_debris
+#         self.capacity_red_damage_state = capacity_red_damage_state
+#         self.capacity_reduction = max(self.capacity_red_damage_state, self.capacity_red_debris)
+#         self.is_fully_repaired = self.current_damage_state == 0
+#         self.is_debris_free = self.capacity_red_debris == 0.0
+#         self.time_step_duration = time_step_duration
+#         self.verbose = verbose
+#         self.traffic_idx = traffic_idx
+#         self.value = 0.0
+
+#         if self.is_bridge:
+#             # self.initial_repair_time = get_bridge_repair_time(
+#             #     self.initial_damage_state
+#             # )
+#             self.initial_repair_time = 200
+#             self.current_repair_time = self.initial_repair_time
+#             self.initial_repair_cost = get_bridge_repair_cost(
+#                 self.bridge_class,
+#                 self.initial_damage_state
+#             )
+#             self.current_repair_cost = self.initial_repair_cost
+#         else:
+#             # self.initial_repair_time = get_road_repair_time(
+#             #     self.initial_damage_state
+#             # )
+#             self.initial_repair_time = 200
+#             self.current_repair_time = self.initial_repair_time
+#             self.initial_repair_cost = get_road_repair_cost(
+#                 self.road_class,
+#                 self.initial_damage_state,
+#                 self.length_miles
+#             )
+#             self.current_repair_cost = self.initial_repair_cost
+
+#     def step(
+#         self,
+#         action: RoadAction,
+#         dependant_buildings: List[Building]
+#     ):
+#         self.__log(f"Stepping road object: {self.id} with action: {action}")
+#         self.dependant_buildings = dependant_buildings
+
+#         if action == RoadAction.DO_NOTHING or action == RoadAction.DO_NOTHING_temp:
+#             self.__log(f"Road {self.id} is doing nothing")
+#             state = self.current_repair_time
+#             reward = 0.0 ## reward for the transportation network is taken from the traffic model
+#             done = self.is_fully_repaired
+#             info = self.__get_info()
+#             info["road_has_repaired"] = False
+#             return info
+
+#         elif action == RoadAction.REPAIR:
+#             was_repaired = self.is_fully_repaired
+#             self.__log(f"Road {self.id} is undergoing minor repair")
+#             try:
+#                 repair_cost = self.__step_repair()
+#                 reward = repair_cost
+#             except Exception as e:
+#                 reward = 0.0
+#                 self.__log(f"Road already repaired,: {str(e)}")
+
+#             if was_repaired == self.is_fully_repaired:
+#                 road_has_repaired = False
+#             else:
+#                 road_has_repaired = True
+#             state = self.current_repair_time
+#             done = self.is_fully_repaired
+#             info = self.__get_info()
+#             info["road_has_repaired"] = road_has_repaired
+#             return info
+
+#         else:
+#             raise ValueError(f"Invalid action: {action}")
+
+#     def __step_repair(self):
+#         assert not self.is_fully_repaired, "Road is already fully repaired"
+#         if any(b.has_debris for b in self.dependant_buildings):
+#             return self.current_repair_cost
+
+#         time_step_duration = self.time_step_duration
+#         remaining_repair_time = max(0, self.current_repair_time - time_step_duration)
+
+#         self.current_repair_time = remaining_repair_time
+
+#         if self.current_repair_time == 0:
+#             self.is_fully_repaired = True
+#             self.current_repair_cost = 0
+#             self.current_damage_state = 0
+#             self.capacity_red_damage_state = 0.0
+#             self.capacity_reduction = max(self.capacity_red_damage_state, self.capacity_red_debris)
+#             return 0
+#         else:
+#             repair_change = time_step_duration / self.initial_repair_time
+#             self.__step_damage_state()
+#             repair_cost = repair_change * self.current_repair_cost
+#             self.current_repair_cost = max(0, self.current_repair_cost - repair_cost)
+#             self.capacity_red_damage_state = round(
+#                 max(0.0, (
+#                     self.capacity_red_damage_state - (repair_change * self.capacity_red_damage_state)
+#                 )), 3)
+#             self.capacity_reduction = max(self.capacity_red_damage_state, self.capacity_red_debris)
+#             return self.current_repair_cost
+
+#     def __step_damage_state(self):
+#         steps = self.initial_damage_state
+#         if steps <= 0:
+#             return self.initial_damage_state
+
+#         days_per_step = self.initial_repair_time / steps
+#         completed_repair_days = self.initial_repair_time - self.current_repair_time
+
+#         levels_repaired = int(completed_repair_days // days_per_step)
+
+#         self.current_damage_state = max(self.initial_damage_state - levels_repaired, 0)
+
+#     def __get_info(self):
+#         info = {
+#                 'repair_time': self.current_repair_time,
+#                 'repair_cost': self.current_repair_cost,
+#                 'is_fully_repaired': self.is_fully_repaired,
+#                 'is_debris_free': self.is_debris_free,
+#                 'capacity_reduction': self.capacity_reduction,
+#                 'capacity_reduction_debris': self.capacity_red_debris,
+#                 'capacity_reduction_damage_state': self.capacity_red_damage_state
+#         }
+#         return info
+
+#     def __log(
+#         self,
+#         msg
+#     ) -> None:
+#         if self.verbose:
+#             print(msg)
+
+#     def __str__(self):
+#         return (
+#             f"Road ID: {self.id}\n"
+#             f"Type: {'Bridge' if self.is_bridge else 'Road'}\n"
+#             f"Damage State: {self.initial_damage_state}\n"
+#             f"Length (miles): {self.length_miles}\n"
+#             f"HAZUS Road Class: {self.hazus_road_class}\n"
+#             f"HAZUS Bridge Class: {self.bridge_class}\n"
+#             f"Repair Time: {self.repair_time} days\n"
+#             f"Repair Cost: ${self.repair_cost:,.2f}"
+#         )
 
 def make_road_objects(
     roads_study_gdf: gpd.GeoDataFrame,
@@ -851,7 +990,8 @@ def make_road_objects(
             init_node = _traffic_row['init_node']
             term_node = _traffic_row['term_node']
             capacity = _traffic_row['capacity']
-        damage_state = row[StudyRoadSchema.DAMAGE_STATE]
+        # damage_state = row[StudyRoadSchema.DAMAGE_STATE]
+        damage_state = 4
         length_miles = row[StudyRoadSchema.LEN_MILE]
         hazus_road_class = row[StudyRoadSchema.HAZUS_ROAD_CLASS]
         hazus_bridge_class = row[StudyRoadSchema.HAZUS_BRIDGE_CLASS]

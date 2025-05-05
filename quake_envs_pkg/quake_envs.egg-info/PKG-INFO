@@ -1,4 +1,4 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.4
 Name: quake_envs
 Version: 0.0.1
 Requires-Dist: geopandas
@@ -9,3 +9,4 @@ Requires-Dist: osmnx
 Requires-Dist: jupyter
 Requires-Dist: geopy
 Requires-Dist: openmatrix
+Dynamic: requires-dist

@@ -142,9 +142,12 @@ class PathUtils:
     buildings_toy_shp = building_geo_data_folder / "toy_city_buildings.shp"
     buildings_toy_shp_2 = building_geo_data_folder / "toy_city_buildings_v_2.shp"
     buildings_toy_shp_3 = building_geo_data_folder / "toy_city_buildings_v_3.geojson"
+    buildings_toy_shp_4 = building_geo_data_folder / "toy_city_buildings_v_4.geojson"
     roads_toy_shp =  roads_geodata_folder / "toy_city_roads.shp"
     roads_toy_shp_2 =  roads_geodata_folder / "toy_city_roads_v_2.shp"
     roads_toy_shp_3 =  roads_geodata_folder / "toy_city_roads_v_3.geojson"
+    roads_toy_shp_4 =  roads_geodata_folder / "toy_city_roads_v_4.geojson"
+
 
 
 
@@ -159,13 +162,40 @@ class PathUtils:
     traffic_toy_city_geojson = traffic_geo_neworks_folder / "toy_city_traffic.geojson"
     traffic_toy_city_geojson_2 = traffic_geo_neworks_folder / "toy_city_traffic_v_2.geojson"
     traffic_toy_city_geojson_3 = traffic_geo_neworks_folder / "toy_city_traffic_v_3.geojson"
+    traffic_toy_city_geojson_4 = traffic_geo_neworks_folder / "toy_city_traffic_v_4.geojson"
     traffic_toy_city_network = traffic_processed_networks_folder / "toy_city_net.csv"
     traffic_toy_city_demand = traffic_processed_networks_folder / "toy_city_demand.csv"
     traffic_toy_city_network_2 = traffic_processed_networks_folder / "toy_city_net_v_2.csv"
+    traffic_toy_city_network_3 = traffic_processed_networks_folder / "toy_city_net_v_3.csv"
+    traffic_toy_city_network_4 = traffic_processed_networks_folder / "toy_city_net_v_4.csv"
     traffic_toy_city_demand_2 = traffic_processed_networks_folder / "toy_city_demand_v_2.csv"
     traffic_toy_city_demand_3 = traffic_processed_networks_folder / "toy_city_demand_v_3.csv"
-    traffic_toy_city_network_3 = traffic_processed_networks_folder / "toy_city_net_v_3.csv"
+    traffic_toy_city_demand_4 = traffic_processed_networks_folder / "toy_city_demand_v_4.csv"
 
+
+    env_data = {
+        "30": {
+                "buildings": buildings_toy_shp_2,
+                "roads": roads_toy_shp_2,
+                "traffic_links": traffic_toy_city_geojson_2,
+                "traffic_net": traffic_toy_city_network_2,
+                "traffic_dem": traffic_toy_city_demand_2
+        },
+        "10": {
+                "buildings": buildings_toy_shp_3,
+                "roads": roads_toy_shp_3,
+                "traffic_links": traffic_toy_city_geojson_3,
+                "traffic_net": traffic_toy_city_network_3,
+                "traffic_dem": traffic_toy_city_demand_3
+        },
+        "4": {
+                "buildings": buildings_toy_shp_4,
+                "roads": roads_toy_shp_4,
+                "traffic_links": traffic_toy_city_geojson_4,
+                "traffic_net": traffic_toy_city_network_4,
+                "traffic_dem": traffic_toy_city_demand_4
+        }
+    }
 
 
     # Bridges Files

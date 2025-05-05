@@ -13,6 +13,7 @@ import geopandas as gpd
 class Resilience:
     def __init__(
         self,
+        n_agents: int,
         n_crews: int,
         time_horizon: int,
         time_step_duration: int,
@@ -24,9 +25,10 @@ class Resilience:
         w_health_doc: float = 0.5
 
     ):
+        self.n_agents = n_agents
+        self.n_crews = n_crews
         self.time_step_duration = time_step_duration
         self.trucks_debris_per_day = truck_debris_per_day
-        self.n_crews = n_crews
         self.time_horizon = time_horizon
         self.w_econ = w_econ
         self.w_crit = w_crit
@@ -51,13 +53,15 @@ class Resilience:
         self.info = {}
 
     def __init_simulation(self) -> InterdependentNetworkSimulation:
-        in_buildings = gpd.read_file(PathUtils.buildings_toy_shp_2)
-        in_roads = gpd.read_file(PathUtils.roads_toy_shp_2)
-        in_traffic_gdf = gpd.read_file(PathUtils.traffic_toy_city_geojson_2)
-        in_traffic_dem = pd.read_csv(PathUtils.traffic_toy_city_demand_2)
-        in_traffic_net = pd.read_csv(PathUtils.traffic_toy_city_network_2)
+        env_data = PathUtils.env_data[str(self.n_agents)]
+        in_buildings = gpd.read_file(env_data["buildings"])
+        in_roads = gpd.read_file(env_data["roads"])
+        in_traffic_gdf = gpd.read_file(env_data["traffic_links"])
+        in_traffic_dem = pd.read_csv(env_data["traffic_dem"])
+        in_traffic_net = pd.read_csv(env_data["traffic_net"])
         self.quake_IM_bldg_save_prefix = "toy_city_bldg_IM"
         self.quake_IM_road_save_prefix = "toy_city_road_IMs"
+
         sim = InterdependentNetworkSimulation(
             use_premade=True,
             buildings_study_gdf=in_buildings,
@@ -72,27 +76,27 @@ class Resilience:
 
     def __simulate_earthquake(self):
         eq_magnitude = self.eq_magnitude
-        self.simulation.earthquake.predict_building_DS(
-            save_directory=PathUtils.earthquake_model_folder,
-            use_saved_IMs=True,
-            base_name=self.quake_IM_bldg_save_prefix,
-            eq_magnitude=eq_magnitude
-        )
-        self.simulation.earthquake.predict_road_DS(
-            save_directory=PathUtils.earthquake_model_folder,
-            use_saved_IMs=True,
-            base_name=self.quake_IM_road_save_prefix,
-            eq_magnitude=eq_magnitude
-        )
-        self.simulation.earthquake.predict_bridge_DS(
-            save_directory=PathUtils.earthquake_model_folder,
-            use_saved_IMs=True,
-            base_name=self.quake_IM_road_save_prefix,
-            eq_magnitude=eq_magnitude
-        )
-        self.simulation.earthquake.predict_building_RT()
-        self.simulation.earthquake.predict_road_RT()
-        self.simulation.earthquake.predict_bridge_RT()
+        # self.simulation.earthquake.predict_building_DS(
+        #     save_directory=PathUtils.earthquake_model_folder,
+        #     use_saved_IMs=True,
+        #     base_name=self.quake_IM_bldg_save_prefix,
+        #     eq_magnitude=eq_magnitude
+        # )
+        # self.simulation.earthquake.predict_road_DS(
+        #     save_directory=PathUtils.earthquake_model_folder,
+        #     use_saved_IMs=True,
+        #     base_name=self.quake_IM_road_save_prefix,
+        #     eq_magnitude=eq_magnitude
+        # )
+        # self.simulation.earthquake.predict_bridge_DS(
+        #     save_directory=PathUtils.earthquake_model_folder,
+        #     use_saved_IMs=True,
+        #     base_name=self.quake_IM_road_save_prefix,
+        #     eq_magnitude=eq_magnitude
+        # )
+        # # self.simulation.earthquake.predict_building_RT()
+        # self.simulation.earthquake.predict_road_RT()
+        # self.simulation.earthquake.predict_bridge_RT()
         self.building_gdf = self.simulation.buildings_study()
         self.roads_gdf = self.simulation.roads_study()
 
@@ -161,6 +165,10 @@ class Resilience:
             np.array([b.current_repair_time for b in self.buildings_objs], dtype=dtype),
             np.array([r.current_repair_time for r in self.road_objs], dtype=dtype)
         ))
+        # return np.concatenate((
+        #     np.array([b.current_damage_state for b in self.buildings_objs], dtype=dtype),
+        #     np.array([r.current_damage_state for r in self.road_objs], dtype=dtype)
+        # ))
 
     def reset(
         self,
@@ -185,7 +193,16 @@ class Resilience:
     def step(self,
         actions: tuple
     ) -> None:
-        actions = self.__prioritise_actions(np.array(actions))
+        # original_actions = np.array(actions)
+        # actions = self.__prioritise_actions(original_actions)
+
+        # Check if actions changed during prioritization (agents chose too many repair actions for n_crews available)
+        # self.actions_changed = not np.array_equal(actions, original_actions)
+
+        ## DEBUG: make all actions possible, even repair everything at all times
+        actions = np.array(actions)
+        self.actions_changed = False
+
         self.info_buildings = [{} for _ in self.buildings_objs]
         self.info_roads = [{} for _ in self.road_objs]
 
@@ -225,9 +242,18 @@ class Resilience:
         bldg_funcs_restored = [False if clear is None else clear for clear in bldg_funcs_restored]
 
         q_econ_components = self.q_econ[1]
+        if self.time == 1:
+            self.post_quake_func = q_community
+            self.post_quake_econ_func = q_econ
+            self.post_quake_crit_func = q_crit
+            self.post_quake_health_func = q_health
 
         return {
             "q": {
+                "community_robustness": self.post_quake_func,
+                "community_robustness_econ": self.post_quake_econ_func,
+                "community_robustness_crit": self.post_quake_crit_func,
+                "community_robustness_health": self.post_quake_health_func,
                 "community": q_community,
                 "econ": q_econ,
                 "crit": q_crit,
@@ -264,6 +290,7 @@ class Resilience:
         info = self.get_info()
 
         # Income term: normalized by initial income
+        curr_incom = info["income"]
         income_term = info["income"] / self.initial_income
 
         # Cost terms: each already negative in get_info, normalize by initial income
@@ -272,7 +299,6 @@ class Resilience:
             name: cost / self.initial_income
             for name, cost in costs.items()
         }
-
         # Assemble components
         components = {'income': income_term}
         components.update(cost_terms)
@@ -312,10 +338,11 @@ class Resilience:
 
     @property
     def truncated(self):
-        if self.time >= self.time_horizon:
-            return True
-        else:
-            return False
+        truncation_conditions_met = (
+            self.time >= self.time_horizon, ## time horizong exceeded
+            self.actions_changed            ## actions changed during prioritization
+        )
+        return truncation_conditions_met
 
     def __assign_random_normalized_ranks(self):
         """

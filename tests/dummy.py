@@ -1,5 +1,3 @@
-x = [False, None, True]
-
-x = [False if el is None else el for el in x]
-
-print(x)
+import torch
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(DEVICE)

@@ -18,10 +18,13 @@ import geopandas as gpd
 import math
 
 from quake_envs.simulations.utils import *
+from imprl.post_process.inference import HeuristicInference
+
 # print(get_project_root())
-env = gym.make("quake-res-30-v1")
+env = gym.make("quake-res-4-v1")
 
+random_inference = HeuristicInference(name="importance_based", env=env)
+# random_inference = HeuristicInference(name="random", env=env)
+# env.resilience.simulation.viz_environment("test")
+random_inference.plot_rollout(figsize=(10,10), title_intensity="max")
 
-# # traffic_gdf = env.simulation._traffic_links_gdf
-# env.simulation.viz_environment("test", figsize=(15,15), show_road_ids=True)
-env.plot_rollout(figsize=(15,10), plot_econ_income=True)

@@ -16,7 +16,8 @@ SINGLE_AGENT = False
 
 if run_qres == "y":
     # Environment
-    env = gym.make("quake-res-30-v1").unwrapped
+    env = gym.make("quake-res-4-v1").unwrapped
+    # env = gym.make("ma-grid-world-v0").unwrapped
 
 else:
     ENV_NAME = "k_out_of_n_infinite"
@@ -34,9 +35,9 @@ time0 = time.time()
 
 # training loop
 for ep in range(100):
-
+    print(f"--------------------------------------------------")
     episode_return = training_rollout(env, LearningAgent)
-
     LearningAgent.report()
+    print(f"--------------------------------------------------")
 
 print(f"Total time: {time.time()-time0:.2f}")
