@@ -22,9 +22,11 @@ from imprl.post_process.inference import HeuristicInference
 
 # print(get_project_root())
 env = gym.make("quake-res-4-v1")
-
-random_inference = HeuristicInference(name="importance_based", env=env)
+# env.reset()
+# env.resilience._save_env_config("tests\\environment_testing_vdn_ps")
 # random_inference = HeuristicInference(name="random", env=env)
+random_inference = HeuristicInference(name="importance_based", env=env)
 # env.resilience.simulation.viz_environment("test")
-random_inference.plot_rollout(figsize=(10,10), title_intensity="max")
+random_inference.plot_rollout(figsize=(20,10), plot_econ_traffic=True, plot_delay=True)
+# random_inference.plot_3d(figsize=(20,10))
 

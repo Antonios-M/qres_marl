@@ -11,8 +11,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Running on: {device}")
 
 run_qres = "y"
-ALGORITHM = "VDN_PS"
+ALGORITHM = "QMIX_PS"
 SINGLE_AGENT = False
+
+
 
 if run_qres == "y":
     # Environment
@@ -35,9 +37,9 @@ time0 = time.time()
 
 # training loop
 for ep in range(100):
-    print(f"--------------------------------------------------")
+    # print(f"--------------------------------------------------")
     episode_return = training_rollout(env, LearningAgent)
     LearningAgent.report()
-    print(f"--------------------------------------------------")
+    # print(f"--------------------------------------------------")
 
 print(f"Total time: {time.time()-time0:.2f}")

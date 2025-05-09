@@ -648,7 +648,6 @@ class EarthquakeAccessor:
             json_files = list(Path(save_directory).glob(f"{base_name}_{str(eq_magnitude)}.json"))
             if not json_files:
                 raise FileNotFoundError(f"No files matching {base_name}_*.json found in {save_directory}")
-
             # Pick a random file
             selected_file = json_files[0]
             # print(f"Using IMs from: {selected_file}")
@@ -656,7 +655,6 @@ class EarthquakeAccessor:
             # Load the JSON data
             with open(selected_file, "r") as f:
                 im_data = json.load(f)
-
             self._parent._buildings_study_gdf[StudyBuildingSchema.PGA] = list(im_data.values())
 
 

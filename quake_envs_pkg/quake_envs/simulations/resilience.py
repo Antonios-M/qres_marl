@@ -9,6 +9,9 @@ from .interdep_network import *
 from .traffic_assignment import *
 import pandas as pd
 import geopandas as gpd
+import json
+import os
+import re
 
 class Resilience:
     def __init__(
@@ -49,6 +52,10 @@ class Resilience:
         )
         self.buildings_objs = None
         self.road_objs = None
+        min_road_rt, max_road_rt = get_road_obs_bounds()
+        min_bldg_rt, max_bldg_rt = get_building_obs_bounds()
+        self._max_obs = max(max_road_rt, max_bldg_rt)
+
         self.earthquake_choices = [7.5, 8.0, 8.5, 9.0]
         self.info = {}
 
@@ -59,8 +66,8 @@ class Resilience:
         in_traffic_gdf = gpd.read_file(env_data["traffic_links"])
         in_traffic_dem = pd.read_csv(env_data["traffic_dem"])
         in_traffic_net = pd.read_csv(env_data["traffic_net"])
-        self.quake_IM_bldg_save_prefix = "toy_city_bldg_IM"
-        self.quake_IM_road_save_prefix = "toy_city_road_IMs"
+        self.quake_IM_bldg_save_prefix = "toy_city_" + str(self.n_agents) + "_bldg_IM"
+        self.quake_IM_road_save_prefix = "toy_city_" + str(self.n_agents) + "_road_IMs"
 
         sim = InterdependentNetworkSimulation(
             use_premade=True,
@@ -76,30 +83,26 @@ class Resilience:
 
     def __simulate_earthquake(self):
         eq_magnitude = self.eq_magnitude
-        # self.simulation.earthquake.predict_building_DS(
-        #     save_directory=PathUtils.earthquake_model_folder,
-        #     use_saved_IMs=True,
-        #     base_name=self.quake_IM_bldg_save_prefix,
-        #     eq_magnitude=eq_magnitude
-        # )
-        # self.simulation.earthquake.predict_road_DS(
-        #     save_directory=PathUtils.earthquake_model_folder,
-        #     use_saved_IMs=True,
-        #     base_name=self.quake_IM_road_save_prefix,
-        #     eq_magnitude=eq_magnitude
-        # )
-        # self.simulation.earthquake.predict_bridge_DS(
-        #     save_directory=PathUtils.earthquake_model_folder,
-        #     use_saved_IMs=True,
-        #     base_name=self.quake_IM_road_save_prefix,
-        #     eq_magnitude=eq_magnitude
-        # )
-        # # self.simulation.earthquake.predict_building_RT()
-        # self.simulation.earthquake.predict_road_RT()
-        # self.simulation.earthquake.predict_bridge_RT()
+        self.simulation.earthquake.predict_building_DS(
+            save_directory=PathUtils.earthquake_model_folder,
+            use_saved_IMs=True,
+            base_name=self.quake_IM_bldg_save_prefix,
+            eq_magnitude=eq_magnitude
+        )
+        self.simulation.earthquake.predict_road_DS(
+            save_directory=PathUtils.earthquake_model_folder,
+            use_saved_IMs=True,
+            base_name=self.quake_IM_road_save_prefix,
+            eq_magnitude=eq_magnitude
+        )
+        self.simulation.earthquake.predict_bridge_DS(
+            save_directory=PathUtils.earthquake_model_folder,
+            use_saved_IMs=True,
+            base_name=self.quake_IM_road_save_prefix,
+            eq_magnitude=eq_magnitude
+        )
         self.building_gdf = self.simulation.buildings_study()
         self.roads_gdf = self.simulation.roads_study()
-
         self.buildings_gdf, self.roads_gdf = self.simulation.traffic.update_capacities(
             buildings_study_gdf=self.buildings_gdf,
             roads_study_gdf=self.roads_gdf,
@@ -170,6 +173,15 @@ class Resilience:
         #     np.array([r.current_damage_state for r in self.road_objs], dtype=dtype)
         # ))
 
+    def compute_down_time_delays(self, financing_method: str = "insurance"):
+        delay = np.zeros(len(self.buildings_objs))
+        for i, building in enumerate(self.buildings_objs):
+            dt = building.get_downtime_delay(financing_method=financing_method)
+            delay[i] = dt
+
+        adjusted_delay = np.max(delay) /  self.time_step_duration
+        return adjusted_delay
+
     def reset(
         self,
         eq_magnitude: int
@@ -180,15 +192,76 @@ class Resilience:
         self.current_mtt = self.initial_mtt
         self.eq_magnitude = eq_magnitude
         self.__simulate_earthquake()
+        # print(f"Log: Initial mean travel time: {self.initial_mtt}")
+        # print(f"Log: Initial building repair times: {[b.current_repair_time for b in self.buildings_objs]}")
+        # print(f"Log: Initial road repair times: {[r.current_repair_time for r in self.road_objs]}")
+        # print(f"Log: Initial building damage states: {[b.current_damage_state for b in self.buildings_objs]}")
+        # print(f"Log: Initial road damage states: {[r.current_damage_state for r in self.road_objs]}")
         self.current_mtt = self.__get_mean_travel_time()
-        self.__assign_random_normalized_ranks()
+        # self.__assign_random_normalized_ranks()
 
         self.initial_income = sum([b.max_income for b in self.buildings_objs])
         self.initial_critical_func = sum([b.initial_critical_func for b in self.buildings_objs])
         self.initial_beds = sum([b.initial_beds for b in self.buildings_objs])
         self.initial_doctors = sum([b.initial_doctors for b in self.buildings_objs])
+        self.delay_time = self.compute_down_time_delays()
 
         return self.q_community_decomp
+
+    def _save_env_config(self, folder_path: str):
+        bldg = self.buildings_objs[0]
+        road = self.road_objs[0]
+
+        env_config = {
+            "n_agents": self.n_agents,
+            "n_crews": self.n_crews,
+            "time_horizon": self.time_horizon,
+            "time_step_duration": self.time_step_duration,
+            "trucks_debris_per_day": self.trucks_debris_per_day,
+            "w_econ": self.w_econ,
+            "w_crit": self.w_crit,
+            "w_health": self.w_health,
+            "w_bed": self.w_bed,
+            "w_doc": self.w_doc,
+            "building": {
+                "time_step_duration": bldg.time_step_duration,
+                "trucks_per_day": bldg.trucks_per_day,
+                "verbose": bldg.verbose,
+                "stoch_ds": bldg.stoch_ds,
+                "calc_debris": bldg.calc_debris,
+                "stoch_rt": bldg.stoch_rt,
+                "stoch_cost": bldg.stoch_cost,
+                "stoch_inc_loss": bldg.stoch_inc_loss,
+                "stoch_loss_of_function": bldg.stoch_loss_of_function,
+                "stoch_relocation_cost": bldg.stoch_relocation_cost
+            },
+            "road": {
+                "time_step_duration": road.time_step_duration,
+                "verbose": road.verbose,
+                "stoch_ds": road.stoch_ds,
+                "calc_debris": road.calc_debris,
+                "stoch_rt": road.stoch_rt,
+                "stoch_cost": road.stoch_cost
+            }
+        }
+
+        # Ensure folder exists
+        os.makedirs(folder_path, exist_ok=True)
+
+        # Find existing versioned files
+        existing_files = os.listdir(folder_path)
+        version_nums = [
+            int(re.match(r"v(\d+)\.json", f).group(1))
+            for f in existing_files
+            if re.match(r"v(\d+)\.json", f)
+        ]
+        next_version = max(version_nums) + 1 if version_nums else 1
+
+        file_name = f"v{next_version}.json"
+        file_path = os.path.join(folder_path, file_name)
+
+        with open(file_path, "w") as f:
+            json.dump(env_config, f, indent=4)
 
     def step(self,
         actions: tuple
@@ -225,7 +298,7 @@ class Resilience:
         )
         self.simulation.traffic.step_traffic_calc_net(self.road_objs)
         self.current_mtt = min(self.__get_mean_travel_time(), self.current_mtt)
-        self.__assign_random_normalized_ranks()
+        # self.__assign_random_normalized_ranks()
         self.time += 1
 
         q_community, q_econ, q_crit, q_health = self.q_community_decomp
@@ -267,7 +340,6 @@ class Resilience:
                 "bldg_funcs": bldg_funcs_restored
             }
         }
-
 
     @property
     def q_community_decomp(self) -> Tuple[float, float, float]:

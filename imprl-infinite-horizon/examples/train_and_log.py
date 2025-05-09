@@ -18,13 +18,13 @@ ENV_SETTING = "hard-1-of-4_infinite"
 ENV_KWARGS = {"percept_type": "belief"}
 
 run_qres = "y"
-ALGORITHM = "VDN_PS"
+ALGORITHM = "DDMAC"
 SINGLE_AGENT = False
 
 if run_qres == "y":
     # Environment
-    env = gym.make("quake-res-30-v1").unwrapped
-    inference_env = gym.make("quake-res-30-v1").unwrapped
+    env = gym.make("quake-res-4-v1").unwrapped
+    inference_env = gym.make("quake-res-4-v1").unwrapped
 
 else:
     ENV_NAME = "k_out_of_n_infinite"
@@ -44,14 +44,14 @@ agent_class = imprl.agents.get_agent_class(ALGORITHM)
 LearningAgent = agent_class(env, alg_config, device)  # initialize agent
 print(f"Loaded default configuration for {ALGORITHM}.")
 
-PROJECT = "main-VDN-PS"
+PROJECT = "main-DDMAC-4-comp-v1"
 ENTITY = "antoniosmavrotas-tu-delft"
 WANDB_DIR = "./experiments/data"
 # WANDB_DIR = "/scratch/pbhustali"
 
 LOGGING_FREQUENCY = 100
-CHECKPT_FREQUENCY = 1_000
-INFERENCING_FREQUENCY = 1_000
+CHECKPT_FREQUENCY = 5_000
+INFERENCING_FREQUENCY = 5_000
 NUM_INFERENCE_EPISODES = 500
 
 

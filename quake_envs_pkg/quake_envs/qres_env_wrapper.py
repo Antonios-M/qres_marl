@@ -41,7 +41,8 @@ class Qres_env_wrapper(gym.Env):
 
     def __get_observation_space(self):
         # self.shared_observation_space = gym.spaces.Box(0, len(DamageStates), shape=(1,), dtype=self.dtype) ## damage state
-        self.shared_observation_space = gym.spaces.Box(0, 600, shape=(1,), dtype=self.dtype)
+        max_obs = self.resilience._max_obs
+        self.shared_observation_space = gym.spaces.Box(0, max_obs, shape=(1,), dtype=self.dtype)
         self.observation_space = gym.spaces.Tuple(
             tuple([self.shared_observation_space] * self.n_agents)
         )
@@ -71,7 +72,7 @@ class Qres_env_wrapper(gym.Env):
         self.w_crit = w_crit
         self.w_health = w_health
         self.n_damage_states = len(DamageStates)
-        self.time_horizon = 20
+        self.time_horizon = time_horizon
         self.baselines ={}
 
         self.resilience = Resilience(
@@ -100,8 +101,10 @@ class Qres_env_wrapper(gym.Env):
         self.functionality_econ = q_econ
         self.functionality_crit = q_crit
         self.functionality_health = q_health
-        info = {}
         obs = self.resilience.state(dtype=self.dtype)
+        info = {
+            "state" : self._get_state(obs)
+        }
 
         return obs, info
 
@@ -117,14 +120,15 @@ class Qres_env_wrapper(gym.Env):
         current_func_crit = info["q"]["crit"]
         current_func_health = info["q"]["health"]
 
-        res_a_community = self.functionality - post_quake_func
-        res_b_community = current_func - post_quake_func
-        res_a_econ = self.functionality_econ - post_quake_func_econ
-        res_b_econ = current_func_econ - post_quake_func_econ
-        res_a_crit = self.functionality_crit - post_quake_func_crit
-        res_b_crit = current_func_crit - post_quake_func_crit
-        res_a_health = self.functionality_health - post_quake_func_health
-        res_b_health = current_func_health - post_quake_func_health
+        res_a_community = max((self.functionality - post_quake_func), 0.0)
+        res_b_community = max((current_func - post_quake_func), 0.0)
+        res_a_econ = max((self.functionality_econ - post_quake_func_econ), 0.0)
+        res_b_econ = max((current_func_econ - post_quake_func_econ), 0.0)
+        res_a_crit = max((self.functionality_crit - post_quake_func_crit), 0.0)
+        res_b_crit = max((current_func_crit - post_quake_func_crit), 0.0)
+        res_a_health = max((self.functionality_health - post_quake_func_health), 0.0)
+        res_b_health = max((current_func_health -
+        post_quake_func_health), 0.0)
 
         reward_econ = np.float32(0.5 * self.time_step_duration * (res_a_econ + res_b_econ))
         reward_crit = np.float32(0.5* self.time_step_duration * (res_a_crit + res_b_crit))
@@ -132,6 +136,9 @@ class Qres_env_wrapper(gym.Env):
 
         ## instantaneous resilience increase
         reward = np.float32(0.5 * self.time_step_duration *(res_a_community + res_b_community))
+        # print(f"Reward: {reward}")
+        # print(f"res_a_community: {res_a_community}")
+        # print(f"res_b_community: {res_b_community}")
 
         # Update state trackers
         self.functionality = current_func
@@ -141,24 +148,31 @@ class Qres_env_wrapper(gym.Env):
 
         terminated = self.resilience.terminated
         trunc_horizon, trunc_actions = self.resilience.truncated
-        # if trunc_actions:
-        #     reward = self.dtype(
-        #         -1000.0
-        #     )
 
+        info["state"] = self._get_state(obs)
         info["reward"] = {
             "total": reward,
             "econ": reward_econ,
             "crit": reward_crit,
             "health": reward_heath
         }
-
         return obs, reward, terminated, trunc_horizon, info
 
+    def _get_state(self, obs) -> np.ndarray:
+        n_states = int(self.shared_observation_space.high[0]) + 1
+        obs = np.asarray(obs, dtype=int)
+        one_hot = np.zeros((n_states, self.n_agents), dtype=int)
+        one_hot[obs, np.arange(self.n_agents)] = 1
+        return one_hot
+
     def system_percept(self, percept):
+        # print(f"percept: {percept}")
+        # print(f"percept shape: {type(percept)}")
+        # print(f"local_observation_space: {self.local_observation_space}")
         local_percept = gym.spaces.utils.flatten(
             self.local_observation_space, percept
         )
+        local_percept = local_percept.flatten()
         return local_percept
 
     def multiagent_percept(self, percept):

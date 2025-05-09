@@ -720,60 +720,6 @@ def get_loss_of_function_time(
 
     return math.ceil(expected_LOF_time)
 
-def get_building_repair_time(
-    occ_type: str,
-    damage_state: int,
-    random_state=None
-) -> int:
-    """
-    Sample repair time based on damage state with damage state-dependent coefficient of variation.
-
-    Parameters:
-    -----------
-    damage_state : int
-        Damage state (0=None, 1=Slight, 2=Moderate, 3=Extensive, 4=Complete)
-    mean_repair_times : np.ndarray
-        Array of mean repair times for each damage state
-    random_state : int, optional
-        Random seed for reproducibility
-
-    Returns:
-    --------
-    integer
-        Sampled repair time
-    """
-    if random_state is not None:
-        np.random.seed(random_state)
-
-    # Validate damage state
-    if not (isinstance(damage_state, (int, np.integer)) and 0 <= damage_state <= 4):
-        raise ValueError("Damage state must be an integer between 0 and 4")
-
-    building_recovery_model = BuildingRecoveryData()
-    mean_repair_times = building_recovery_model.get_repair_time(occ_type)
-
-    # Get mean repair time for the damage state
-    mean_time = mean_repair_times[damage_state]
-
-    # Sample CV based on damage state
-    if damage_state in {1, 2}:  # Slight or Moderate
-        cv = np.random.uniform(0.15, 0.20)
-    elif damage_state in {3, 4}:  # Extensive or Complete
-        cv = np.random.uniform(0.35, 0.40)
-    else:  # No damage (state 0)
-        return 0
-
-    # Calculate standard deviation
-    std_dev = mean_time * cv
-
-    # Sample repair time from normal distribution
-    repair_time = np.random.normal(mean_time, std_dev)
-
-    # Ensure repair time is non-negative
-    repair_time = max(0, int(repair_time))
-
-    return int(repair_time)
-
 def get_debris_weight(
     str_type: str
 ):
@@ -869,7 +815,87 @@ def get_building_value(
     value = income_value * ds_value * sqft_value * essential_value
     return value
 
+def get_building_obs_bounds():
+    repair_model = BuildingRecoveryData()
+    min_rt, max_rt = repair_model.compute_repair_time_bins()
+    return min_rt, max_rt
 
+def get_building_repair_time(
+    occ_type: str,
+    damage_state: int,
+    random_state=None
+) -> int:
+    """
+    Sample repair time based on damage state with damage state-dependent coefficient of variation.
+
+    Parameters:
+    -----------
+    damage_state : int
+        Damage state (0=None, 1=Slight, 2=Moderate, 3=Extensive, 4=Complete)
+    mean_repair_times : np.ndarray
+        Array of mean repair times for each damage state
+    random_state : int, optional
+        Random seed for reproducibility
+
+    Returns:
+    --------
+    integer
+        Sampled repair time
+    """
+    if random_state is not None:
+        np.random.seed(random_state)
+
+    # Validate damage state
+    if not (isinstance(damage_state, (int, np.integer)) and 0 <= damage_state <= 4):
+        raise ValueError("Damage state must be an integer between 0 and 4")
+
+    building_recovery_model = BuildingRecoveryData()
+    mean_repair_times = building_recovery_model.get_repair_time(occ_type)
+
+    # Get mean repair time for the damage state
+    mean_time = mean_repair_times[damage_state]
+
+    # Sample CV based on damage state
+    if damage_state in {1, 2}:  # Slight or Moderate
+        cv = np.random.uniform(0.15, 0.20)
+    elif damage_state in {3, 4}:  # Extensive or Complete
+        cv = np.random.uniform(0.35, 0.40)
+    else:  # No damage (state 0)
+        return 0
+
+    # Convert lognormal mean and COV to normal mu and sigma
+    sigma = np.sqrt(np.log(1 + cv**2))
+    mu = np.log(mean_time) - 0.5 * sigma**2
+
+    # Sample repair time from lognormal distribution
+    repair_time = np.random.lognormal(mean=mu, sigma=sigma)
+
+    # Clamp repair time to [0, max_rt]
+    _, max_rt = get_building_obs_bounds()
+    repair_time = max(0, repair_time)
+    repair_time = min(repair_time, max_rt)
+
+    return int(repair_time)
+
+def get_building_downtime_delay(
+    damage_state: int,
+    is_essential: bool,
+    num_stories: int,
+    financing_method: str,
+    random_state=None
+) -> int:
+    if random_state is not None:
+        np.random.seed(random_state)
+
+    downtime_delays = BuildingDowntimeDelays(
+        essential=is_essential,
+        num_stories=num_stories,
+        financing_method=financing_method,
+        damage_state=damage_state
+    )
+    downtime_delay = downtime_delays.get_delay_time()
+
+    return int(downtime_delay)
 
 class StudyBuildingsAccessor:
     """
@@ -1024,38 +1050,90 @@ class StudyBuildingsAccessor:
 
 
 class BuildingAction(Enum):
-    # DO_NOTHING = 0
-    # CLEAR_DEBRIS = 1
-    # REPAIR = 2
     DO_NOTHING = 0
     REPAIR = 1
+    # CLEAR_DEBRIS = 2
 
     def __str__(self):
         """Returns a human-readable string representation of the action."""
         return self.name.replace("_", " ").title()  # "REPAIR" -> "Minor Repair"
 
+
 class Building:
+    """
+    A class representing a building with a probability dist over damage states an
+    associated economic impacts after an earthquake.
+
+    The class initializes a building with given characteristics and calculates various
+    impact metrics based on damage state probabilities.
+
+    Attributes:
+        id (str): Unique identifier for the building (UUID)
+        damage_state_probs (np.array): Probability distribution of damage states
+            [none, slight, moderate, extensive, complete]
+        occtype (str): Occupancy type of the building
+        num_stories (int): Number of stories in the building
+        sqft (float): Total square footage of the building
+        action (None): Placeholder for future action assignments
+        damage_state (int): Sampled damage state based on probability distribution
+        initial_repair_time (float): Initially calculated repair time
+        current_repair_time (float): Remaining time needed for repairs
+        income_loss (float): Calculated income loss due to damage
+        max_income (float): Maximum potential income for the building
+        initial_structural_repair_cost (float): Time period during which building cannot function
+        initial_structural_repair_cost (float): Estimated costs for structural repairs
+    """
+
     def __init__(
-    self,
-    id: str,  # id for building identification
-    damage_state_probs: np.array,  # Damage state probabilities [0.1,0.2,0.5,0.05,0.05]
-    occtype: str,  # Occupancy type
-    str_type: str, # detailed (str_typ2) structure type see building_config.py
-    num_stories: int,  # Number of stories
-    sqft: float,  # Square footage
-    is_essential: bool = False, # Essential Facility Designation, see HAZUS Equake Manual, 2024.
-    access_road_id: int = -1, # idx of road connected to building
-    debris_capacity_reduction: float = 0.0,
-    trucks_per_day: int = 1.0,
-    time_step_duration: int = 7, ## duration of environment timestep in days
-    verbose: bool = True,
-    is_under_repair = False,
+        self,
+        id: str,  # id for building identification
+        damage_state_probs: np.array,  # Damage state probabilities [0.1,0.2,0.5,0.05,0.05]
+        occtype: str,  # Occupancy type
+        str_type: str, # detailed (str_typ2) structure type see building_config.py
+        num_stories: int,  # Number of stories
+        sqft: float,  # Square footage
+        calc_debris: bool,
+        stoch_ds: bool,
+        stoch_rt: bool,
+        stoch_cost: bool,
+        stoch_inc_loss: bool,
+        stoch_loss_of_function: bool,
+        stoch_relocation_cost: bool,
+        is_essential: bool = False, # Essential Facility Designation, see HAZUS Equake Manual, 2024.
+        access_road_id: int = -1, # idx of road connected to building
+        debris_capacity_reduction: float = 0.0,
+        trucks_per_day: int = 1.0,
+        time_step_duration: int = 7, ## duration of environment timestep in days
+        verbose: bool = True,
+        is_under_repair = False,
 
     ) -> None:
+        """
+        Initialize a Building instance with given parameters and calculate impact metrics.
+
+        Args:
+            id: Unique identifier for the building
+            damage_state_probs: Array of probabilities for each damage state
+            occtype: Occupancy type of the building
+            num_stories: Number of stories in the building
+            sqft: Total square footage of the building
+        """
+        self.stoch_ds = stoch_ds
+        self.stoch_rt = stoch_rt
+        self.stoch_cost = stoch_cost
+        self.stoch_inc_loss = stoch_inc_loss
+        self.stoch_loss_of_function = stoch_loss_of_function
+        self.stoch_relocation_cost = stoch_relocation_cost
+        self.calc_debris = calc_debris
+        self.cost_decay = "quadratic"
+        # self.repair_decay = "linear"
+        # self.income_loss_decay = "linear"
+        self.income_loss_decay = "quadratic"
+
         # Basic building characteristics
         self.verbose = verbose
         self.id = id
-        self.damage_state_probs = damage_state_probs
+
         self.occtype = occtype
         self.num_stories = num_stories
         self.sqft = sqft
@@ -1067,28 +1145,26 @@ class Building:
         self.str_type = str_type
         self.time_step_duration = time_step_duration
         self.value = 0.0
-
         # Sample initial damage state based on probability distribution
-        self.initial_damage_state = 4
+
+        ## ---------------------Damage State---------------------
+        if self.stoch_ds:
+            self.damage_state_probs = damage_state_probs
+            self.initial_damage_state = np.random.choice(
+                len(damage_state_probs),
+                p=damage_state_probs
+            )
+        else:
+            self.damage_state_probs = np.array([0.0,0.0,0.0,0.0,1.0])
+            self.initial_damage_state = 4
+
         self.current_damage_state = self.initial_damage_state
-        ## set boolean of whether building has debris or not if it is at or above Extensive DS (DS={3,4})
-        self.has_debris = False
 
-        ## set boolean of whether building is above None damage state
-        self.is_fully_repaired = self.initial_damage_state == 0
-        self.is_functional = self.initial_damage_state == 0
-        self.time_step_after_repair = -1
-
-        self.initial_beds = get_hosp_beds(self.sqft, self.occtype)
-        self.current_beds = self.get_hosp_beds()
-
-        self.initial_doctors = get_num_doctors(self.sqft, self.occtype)
-        self.current_doctors = self.get_doctors()
-
-        self.current_critical_func = self.get_critical_functionality()
-
-
-
+        ## ---------------------Debris---------------------
+        if self.calc_debris:
+            self.has_debris = self.current_damage_state >= 3
+        else:
+            self.has_debris = False
         if self.has_debris:
             self.debris_weight = get_debris_weight(
                 self.str_type
@@ -1104,75 +1180,120 @@ class Building:
             self.debris_cleanup_time = 0
             self.current_debris_cleanup_time = 0
 
-
-
-        # Calculate repair times in days
-        # self.initial_repair_time = get_building_repair_time(
-        #     occ_type=self.occtype,
-        #     damage_state=self.initial_damage_state
-        # )
-        self.initial_repair_time = 200
+        ## ---------------------Repair---------------------
+        if self.stoch_rt:
+            self.initial_repair_time = get_building_repair_time(
+                occ_type=self.occtype,
+                damage_state=self.initial_damage_state
+            )
+        else:
+            self.initial_repair_time = self.initial_damage_state * 40
         self.current_repair_time = self.initial_repair_time
+        # print(f"Log----buiding_{self.id}: Initial repair time: {self.initial_repair_time}")
+        ## is repaired var
+        self.is_fully_repaired = self.initial_damage_state == 0
+        self.is_functional = self.initial_damage_state == 0
+        self.time_step_after_repair = -1
 
-        # Calculate functional downtime:
-        #   the time needed after fully repairing the building to
-        #   recovery full economic activity/functionality of the building
-        self.loss_of_function_time = get_loss_of_function_time(
-            occ_type=self.occtype,
-            damage_state_probs=self.damage_state_probs
-        )
-        self.current_loss_of_function_time = self.loss_of_function_time
+        # repair cost / $
+        if self.stoch_cost:
+            self.initial_structural_repair_cost = get_structural_repair_costs(
+                self.occtype,
+                self.num_stories,
+                self.damage_state_probs,
+                self.sqft
+            )
+        else:
+            self.initial_structural_repair_cost = self.initial_damage_state * 100000
+        self.current_structural_repair_cost = self.initial_structural_repair_cost
 
-        # Calculate economic impacts:
-        #   income_loss: amount in $ lost in annual income
-        #   max_income: amount in $ of expected annual income generated by the building
-        self.income_loss, self.max_income = get_income_loss(
-            occ_type=self.occtype,
-            sqft=self.sqft,
-            damage_state_probs=self.damage_state_probs,
-            repair_time=self.current_repair_time
-        )
+        ## ---------------------Functionality---------------------
+        self.initial_beds = get_hosp_beds(self.sqft, self.occtype)
+        self.current_beds = self.get_hosp_beds()
+
+        self.initial_doctors = get_num_doctors(self.sqft, self.occtype)
+        self.current_doctors = self.get_doctors()
+
+        self.current_critical_func = self.get_critical_functionality()
+
+        ## post-repair func. downtime
+        if self.stoch_loss_of_function:
+            self.initial_loss_of_function_time = get_loss_of_function_time(
+                occ_type=self.occtype,
+                damage_state_probs=self.damage_state_probs
+            )
+        else:
+            self.initial_loss_of_function_time = self.initial_damage_state * 30
+        self.current_loss_of_function_time = self.initial_loss_of_function_time
+
+        ## ---------------------Income/Costs---------------------
+        ## income
+        if self.stoch_inc_loss:
+            self.income_loss, self.max_income = get_income_loss(
+                occ_type=self.occtype,
+                sqft=self.sqft,
+                damage_state_probs=self.damage_state_probs,
+                repair_time=self.current_repair_time
+            )
+        else:
+            self.max_income =  1.25 * ((self.sqft / 750) * 60000)
+            self.income_loss = 0.8 * self.max_income
         self.current_income = self.max_income - self.income_loss
-
-
-        # Calculate repair costs in $
-        self.structural_repair_cost = get_structural_repair_costs(
-            self.occtype,
-            self.num_stories,
-            self.damage_state_probs,
-            self.sqft
-        )
-        self.current_structural_repair_cost = self.structural_repair_cost
-
-        self.initial_relocation_cost = get_relocation_cost(
-            occtype=self.occtype,
-            sqft=self.sqft,
-            damage_state_probs=self.damage_state_probs
-        )
+        self.initial_income_loss = self.income_loss
+        # print(f"initial post-quake income: {self.current_income}")
+        # print(f"Max income: {self.max_income}")
+        ## relocation costs
+        if self.stoch_relocation_cost:
+            self.initial_relocation_cost = get_relocation_cost(
+                occtype=self.occtype,
+                sqft=self.sqft,
+                damage_state_probs=self.damage_state_probs
+            )
+        else:
+            self.initial_relocation_cost = self.max_income * 0.25
         self.current_relocation_cost = self.initial_relocation_cost
 
-    def step(self, action: BuildingAction):
+    def step(
+        self,
+        action: BuildingAction
+    ):
+        self.__log(f'Stepping building: {self.id} with action: {action.value}...')
         if action == BuildingAction.DO_NOTHING:
             try:
                 self.__step_functionality()
             except AssertionError as e:
                 pass
+
+            self.__log(f'Building {self.id} is doing nothing')
+            state = self.current_repair_time
+            done = self.is_functional
             info = self.__get_info()
             info["repair_has_finished"] = False
             info["debris_has_cleared"] = False
             info["functionality_has_restored"] = False
             return info
+
+        ## ---------- Repair Action ----------
         elif action == BuildingAction.REPAIR:
+            had_debris = self.has_debris
             was_repaired = self.is_fully_repaired
             was_functional = self.is_functional
             self.__log('...trying minor repair')
             try:
-                self.__step_repair()
+                self.__step_debris()
             except AssertionError as e:
                 try:
-                    self.__step_functionality()
+                    self.__step_repair()
                 except AssertionError as e:
-                    pass
+                    try:
+                        self.__step_functionality()
+                    except AssertionError as e:
+                        pass
+            # track if debris was cleared in this timestep
+            if self.has_debris == had_debris:
+                debris_cleared = False
+            else:
+                debris_cleared = True
             ## track if repair finished in this time step
             if was_repaired == self.is_fully_repaired:
                 repair_finished = False
@@ -1187,6 +1308,7 @@ class Building:
             state = self.current_repair_time
             done = self.is_functional
             info = self.__get_info()
+            info["debris_has_cleared"] = debris_cleared
             info["repair_has_finished"] = repair_finished
             info["functionality_has_restored"] = functionality_restored
             self.is_under_repair = False
@@ -1210,6 +1332,14 @@ class Building:
             "functionality_has_restored": None
         }
         return info
+
+    def get_downtime_delay(self, financing_method: str):
+        return get_building_downtime_delay(
+            damage_state=self.current_damage_state,
+            is_essential=self.is_essential,
+            num_stories=self.num_stories,
+            financing_method=financing_method
+        )
 
     def get_relocation_cost(self):
         if self.is_fully_repaired:
@@ -1276,11 +1406,23 @@ class Building:
 
         return self.current_doctors
 
+    def __step_debris(self):
+        assert not self.is_fully_repaired
+        assert self.has_debris
+
+        time_step_duration = self.time_step_duration
+
+        self.current_debris_cleanup_time = max( self.current_debris_cleanup_time - time_step_duration, 0)
+
+        if self.current_debris_cleanup_time == 0:
+            self.has_debris = False
+            self.debris_capacity_reduction = 0.0
+
     def __step_damage_state(self):
         steps = self.initial_damage_state
+
         if steps <= 0:
             return self.initial_damage_state
-
         days_per_step = self.initial_repair_time / steps
         completed_repair_days = self.initial_repair_time - self.current_repair_time
 
@@ -1292,11 +1434,30 @@ class Building:
         assert not self.is_functional
         assert not self.is_fully_repaired
         assert not self.has_debris
+        assert self.initial_repair_time > 0
 
         time_step_duration = self.time_step_duration
-        # Calculate the remaining time for repair after this step
-        remaining_repair_time = max(0, self.current_repair_time - time_step_duration)
-        self.current_repair_time = remaining_repair_time
+
+        # Calculate the fraction of repair done this step
+        repair_fraction = time_step_duration / self.initial_repair_time
+
+        # Reduce current repair time
+        self.current_repair_time = max(0, self.current_repair_time - time_step_duration)
+
+        if self.cost_decay == "linear":
+            # Reduce repair cost by the same fraction
+            cost_reduction = repair_fraction * self.initial_structural_repair_cost
+            self.current_structural_repair_cost = max(
+                0, self.current_structural_repair_cost - cost_reduction
+            )
+        else:
+            # Compute fraction of repair completed
+            elapsed_time = self.initial_repair_time - self.current_repair_time
+            fraction_complete = elapsed_time / self.initial_repair_time
+
+            # Quadratic decay (fast drop early, slow later)
+            remaining_cost_fraction = (1 - fraction_complete) ** 2
+            self.current_structural_repair_cost = self.initial_structural_repair_cost * remaining_cost_fraction
 
         # If repair is now complete
         if self.current_repair_time == 0:
@@ -1305,38 +1466,40 @@ class Building:
             self.time_step_after_repair = 0
             self.current_structural_repair_cost = 0
         else:
-            # Calculate the fraction of repair completed during time-step
-            repair_change = time_step_duration / self.initial_repair_time
             self.__step_damage_state()
-            # Compute the cost of repair for this time-step
-            repair_cost = repair_change * self.current_structural_repair_cost
-
-            # Update remaining repair cost
-            remaining_repair_cost = max(self.current_structural_repair_cost - repair_cost, 0)
-            self.current_structural_repair_cost = remaining_repair_cost
+            self.get_relocation_cost()
 
     def __step_functionality(self):
         assert self.is_fully_repaired
         assert self.current_damage_state == 0
-        assert self.time_step_after_repair > -1
+        # assert self.time_step_after_repair > -1
         assert not self.is_functional
-
+        if self.max_income == 0:
+            self.is_functional = True
+            return
         time_step_duration = self.time_step_duration
-
         self.time_step_after_repair += 1
-        remaining_loss_of_function_time = max(0, self.current_loss_of_function_time - time_step_duration)
-        self.current_loss_of_function_time = remaining_loss_of_function_time
+
+        # Decrease remaining loss-of-function time
+        self.current_loss_of_function_time = max(
+            0, self.current_loss_of_function_time - time_step_duration
+        )
+
         if self.current_loss_of_function_time == 0:
             self.is_functional = True
             self.current_income = self.max_income
         else:
-            functionality_change = max(1.0, time_step_duration / self.current_loss_of_function_time)
-            if functionality_change == 1.0:
-                self.current_income = self.max_income
-                return
-            else:
-                income_increase = functionality_change * (self.max_income - self.current_income)
-                self.current_income = min(self.max_income, self.current_income + max(0.0, income_increase))
+            # Compute fraction of progress
+            fraction_recovered = (self.initial_loss_of_function_time - self.current_loss_of_function_time) / self.initial_loss_of_function_time
+            if self.income_loss_decay == "quadratic":
+                income_fraction = fraction_recovered ** 2
+            else:  # default to linear
+                income_fraction = fraction_recovered
+
+            target_income = (self.max_income - self.initial_income_loss) + self.initial_income_loss * income_fraction
+
+            # Only increase income, never decrease
+            self.current_income = max(self.current_income, target_income)
 
     def __log(
         self,
@@ -1345,424 +1508,23 @@ class Building:
         if self.verbose:
             print(msg)
 
-
-# class Building:
-#     """
-#     A class representing a building with a probability dist over damage states an
-#     associated economic impacts after an earthquake.
-
-#     The class initializes a building with given characteristics and calculates various
-#     impact metrics based on damage state probabilities.
-
-#     Attributes:
-#         id (str): Unique identifier for the building (UUID)
-#         damage_state_probs (np.array): Probability distribution of damage states
-#             [none, slight, moderate, extensive, complete]
-#         occtype (str): Occupancy type of the building
-#         num_stories (int): Number of stories in the building
-#         sqft (float): Total square footage of the building
-#         action (None): Placeholder for future action assignments
-#         damage_state (int): Sampled damage state based on probability distribution
-#         initial_repair_time (float): Initially calculated repair time
-#         current_repair_time (float): Remaining time needed for repairs
-#         income_loss (float): Calculated income loss due to damage
-#         max_income (float): Maximum potential income for the building
-#         loss_of_function_time (float): Time period during which building cannot function
-#         structural_repair_cost (float): Estimated costs for structural repairs
-#     """
-
-#     def __init__(
-#         self,
-#         id: str,  # id for building identification
-#         damage_state_probs: np.array,  # Damage state probabilities [0.1,0.2,0.5,0.05,0.05]
-#         occtype: str,  # Occupancy type
-#         str_type: str, # detailed (str_typ2) structure type see building_config.py
-#         num_stories: int,  # Number of stories
-#         sqft: float,  # Square footage
-#         is_essential: bool = False, # Essential Facility Designation, see HAZUS Equake Manual, 2024.
-#         access_road_id: int = -1, # idx of road connected to building
-#         debris_capacity_reduction: float = 0.0,
-#         trucks_per_day: int = 1.0,
-#         time_step_duration: int = 7, ## duration of environment timestep in days
-#         verbose: bool = True,
-#         is_under_repair = False,
-
-#     ) -> None:
-#         """
-#         Initialize a Building instance with given parameters and calculate impact metrics.
-
-#         Args:
-#             id: Unique identifier for the building
-#             damage_state_probs: Array of probabilities for each damage state
-#             occtype: Occupancy type of the building
-#             num_stories: Number of stories in the building
-#             sqft: Total square footage of the building
-#         """
-
-#         # Basic building characteristics
-#         self.verbose = verbose
-#         self.id = id
-#         self.damage_state_probs = damage_state_probs
-#         self.occtype = occtype
-#         self.num_stories = num_stories
-#         self.sqft = sqft
-#         self.is_essential = is_essential
-#         self.access_road_id = access_road_id
-#         self.debris_capacity_reduction = debris_capacity_reduction
-#         self.is_under_repair = is_under_repair
-#         self.trucks_per_day = trucks_per_day
-#         self.str_type = str_type
-#         self.time_step_duration = time_step_duration
-#         self.value = 0.0
-
-#         # Sample initial damage state based on probability distribution
-#         self.initial_damage_state = np.random.choice(
-#             len(damage_state_probs),
-#             p=damage_state_probs
-#         )
-#         self.current_damage_state = self.initial_damage_state
-#         ## set boolean of whether building has debris or not if it is at or above Extensive DS (DS={3,4})
-#         self.has_debris = self.current_damage_state >= 3
-
-#         ## set boolean of whether building is above None damage state
-#         self.is_fully_repaired = self.initial_damage_state == 0
-#         self.is_functional = self.initial_damage_state == 0
-#         self.time_step_after_repair = -1
-
-#         self.initial_beds = get_hosp_beds(self.sqft, self.occtype)
-#         self.current_beds = self.get_hosp_beds()
-
-#         self.initial_doctors = get_num_doctors(self.sqft, self.occtype)
-#         self.current_doctors = self.get_doctors()
-
-#         self.current_critical_func = self.get_critical_functionality()
-
-
-
-#         if self.has_debris:
-#             self.debris_weight = get_debris_weight(
-#                 self.str_type
-#             )
-#             self.debris_cleanup_time = get_debris_cleanup_time(
-#                 self.debris_weight,
-#                 self.trucks_per_day
-#             )
-#             self.current_debris_cleanup_time = self.debris_cleanup_time
-
-#         else:
-#             self.debris_weight = 0
-#             self.debris_cleanup_time = 0
-#             self.current_debris_cleanup_time = 0
-
-
-
-#         # Calculate repair times in days
-#         # self.initial_repair_time = get_building_repair_time(
-#         #     occ_type=self.occtype,
-#         #     damage_state=self.initial_damage_state
-#         # )
-#         self.initial_repair_time = 200
-#         self.current_repair_time = self.initial_repair_time
-
-#         # Calculate functional downtime:
-#         #   the time needed after fully repairing the building to
-#         #   recovery full economic activity/functionality of the building
-#         self.loss_of_function_time = get_loss_of_function_time(
-#             occ_type=self.occtype,
-#             damage_state_probs=self.damage_state_probs
-#         )
-#         self.current_loss_of_function_time = self.loss_of_function_time
-
-#         # Calculate economic impacts:
-#         #   income_loss: amount in $ lost in annual income
-#         #   max_income: amount in $ of expected annual income generated by the building
-#         self.income_loss, self.max_income = get_income_loss(
-#             occ_type=self.occtype,
-#             sqft=self.sqft,
-#             damage_state_probs=self.damage_state_probs,
-#             repair_time=self.current_repair_time
-#         )
-#         self.current_income = self.max_income - self.income_loss
-
-
-#         # Calculate repair costs in $
-#         self.structural_repair_cost = get_structural_repair_costs(
-#             self.occtype,
-#             self.num_stories,
-#             self.damage_state_probs,
-#             self.sqft
-#         )
-#         self.current_structural_repair_cost = self.structural_repair_cost
-
-#         self.initial_relocation_cost = get_relocation_cost(
-#             occtype=self.occtype,
-#             sqft=self.sqft,
-#             damage_state_probs=self.damage_state_probs
-#         )
-#         self.current_relocation_cost = self.initial_relocation_cost
-
-#     def step(
-#         self,
-#         action: BuildingAction
-#     ):
-#         self.__log(f'Stepping building: {self.id} with action: {action.value}...')
-#         if action == BuildingAction.DO_NOTHING:
-#             try:
-#                 self.__step_functionality()
-#             except AssertionError as e:
-#                 pass
-
-#             self.__log(f'Building {self.id} is doing nothing')
-#             state = self.current_repair_time
-#             done = self.is_functional
-#             info = self.__get_info()
-#             info["repair_has_finished"] = False
-#             info["debris_has_cleared"] = False
-#             info["functionality_has_restored"] = False
-#             return info
-
-#         elif action == BuildingAction.CLEAR_DEBRIS:
-#             had_debris = self.has_debris
-#             was_functional = self.is_functional
-#             self.__log('...trying to clear debris')
-#             try:
-#                 self.__step_debris()
-#             except AssertionError as e:
-#                 try:
-#                     self.__step_functionality()
-#                 except AssertionError as e:
-#                     pass
-
-#             # track if debris was cleared in this timestep
-#             if self.has_debris == had_debris:
-#                 debris_cleared = False
-#             else:
-#                 debris_cleared = True
-#             ## track if functionality changed
-#             if was_functional == self.is_functional:
-#                 functionality_restored = False
-#             else:
-#                 functionality_restored = True
-
-#             state = self.current_repair_time
-#             done = self.is_functional
-#             info = self.__get_info()
-#             info["debris_has_cleared"] = debris_cleared
-#             info["functionality_has_restored"] = functionality_restored
-#             return info
-
-#         elif action == BuildingAction.REPAIR:
-#             was_repaired = self.is_fully_repaired
-#             was_functional = self.is_functional
-#             self.__log('...trying minor repair')
-#             try:
-#                 self.__step_repair()
-#             except AssertionError as e:
-#                 try:
-#                     self.__step_functionality()
-#                 except AssertionError as e:
-#                     pass
-#             ## track if repair finished in this time step
-#             if was_repaired == self.is_fully_repaired:
-#                 repair_finished = False
-#             else:
-#                 repair_finished = True
-#             ## track if functionality changed
-#             if was_functional == self.is_functional:
-#                 functionality_restored = False
-#             else:
-#                 functionality_restored = True
-
-#             state = self.current_repair_time
-#             done = self.is_functional
-#             info = self.__get_info()
-#             info["repair_has_finished"] = repair_finished
-#             info["functionality_has_restored"] = functionality_restored
-#             self.is_under_repair = False
-#             return info
-
-#         else:
-#             raise ValueError(f'Invalid action: {action}')
-
-#     def __get_info(self):
-#         info = {
-#             'repair_time': self.current_repair_time,
-#             'has_debris': self.has_debris,
-#             'is_fully_repaired': self.is_fully_repaired,
-#             'is_functional': self.is_functional,
-#             'income': self.current_income,
-#             'repair_cost': self.current_structural_repair_cost,
-#             'loss_of_functionality_time': self.current_loss_of_function_time,
-#             "relocation_cost": self.current_relocation_cost,
-#             "debris_has_cleared": None,
-#             "repair_has_finished": None,
-#             "functionality_has_restored": None
-#         }
-#         return info
-
-#     def get_relocation_cost(self):
-#         if self.is_fully_repaired:
-#             self.current_relocation_cost = 0.0
-#         else:
-#             damage_state_probs = np.zeros(len(self.damage_state_probs))
-#             damage_state_probs[self.current_damage_state] = 1.0
-
-#             self.current_relocation_cost = get_relocation_cost(
-#                 occtype=self.occtype,
-#                 sqft=self.sqft,
-#                 damage_state_probs=damage_state_probs
-#             )
-#         return self.current_relocation_cost
-
-#     def get_critical_functionality(self):
-#         if self.occtype in ESSENTIAL_FACILITY_OCC_TYPES:
-#             self.initial_critical_func = 1.0
-
-#             # Define functionality values for each damage state
-#             damage_to_func = {
-#                 0: 1.0,   # Fully functional
-#                 1: 0.75,   # Partial
-#                 2: 0.3,  # Minimal
-#                 3: 0.1,   # Non-functional
-#                 4: 0.0    # Destroyed
-#             }
-
-#             # Get the functionality for current damage state
-#             self.current_critical_func = damage_to_func.get(self.current_damage_state, 0.0) * self.initial_critical_func
-
-#             return self.current_critical_func
-
-#         # Non-essential facilities have no critical function
-#         self.initial_critical_func = 0.0
-#         self.current_critical_func = 0.0
-#         return 0.0
-
-#     def get_hosp_beds(self):
-#         # Damage-to-bed availability mapping
-#         damage_factor = {
-#             0: 1.0,
-#             1: 0.75,
-#             2: 0.3,
-#             3: 0.1,
-#             4: 0.0
-#         }.get(self.current_damage_state)
-
-#         self.current_beds = int(self.initial_beds * damage_factor)
-
-#         return self.current_beds
-
-#     def get_doctors(self):
-#         # Damage-to-bed availability mapping
-#         damage_factor = {
-#             0: 1.0,
-#             1: 0.75,
-#             2: 0.3,
-#             3: 0.1,
-#             4: 0.0
-#         }.get(self.current_damage_state)
-
-#         self.current_doctors = int(self.initial_doctors * damage_factor)
-
-#         return self.current_doctors
-
-#     def __step_debris(self):
-#         assert not self.is_fully_repaired
-#         assert self.has_debris
-
-#         time_step_duration = self.time_step_duration
-
-#         self.current_debris_cleanup_time = max( self.current_debris_cleanup_time - time_step_duration, 0)
-
-#         if self.current_debris_cleanup_time == 0:
-#             self.has_debris = False
-#             self.debris_capacity_reduction = 0.0
-
-#     def __step_damage_state(self):
-#         steps = self.initial_damage_state
-#         if steps <= 0:
-#             return self.initial_damage_state
-
-#         days_per_step = self.initial_repair_time / steps
-#         completed_repair_days = self.initial_repair_time - self.current_repair_time
-
-#         levels_repaired = int(completed_repair_days // days_per_step)
-
-#         self.current_damage_state = max(self.initial_damage_state - levels_repaired, 0)
-
-#     def __step_repair(self):
-#         assert not self.is_functional
-#         assert not self.is_fully_repaired
-#         assert not self.has_debris
-
-#         time_step_duration = self.time_step_duration
-#         # Calculate the remaining time for repair after this step
-#         remaining_repair_time = max(0, self.current_repair_time - time_step_duration)
-#         self.current_repair_time = remaining_repair_time
-
-#         # If repair is now complete
-#         if self.current_repair_time == 0:
-#             self.is_fully_repaired = True
-#             self.current_damage_state = 0
-#             self.time_step_after_repair = 0
-#             self.current_structural_repair_cost = 0
-#         else:
-#             # Calculate the fraction of repair completed during time-step
-#             repair_change = time_step_duration / self.initial_repair_time
-#             self.__step_damage_state()
-#             # Compute the cost of repair for this time-step
-#             repair_cost = repair_change * self.current_structural_repair_cost
-
-#             # Update remaining repair cost
-#             remaining_repair_cost = max(self.current_structural_repair_cost - repair_cost, 0)
-#             self.current_structural_repair_cost = remaining_repair_cost
-
-#     def __step_functionality(self):
-#         assert self.is_fully_repaired
-#         assert self.current_damage_state == 0
-#         assert self.time_step_after_repair > -1
-#         assert not self.is_functional
-
-#         time_step_duration = self.time_step_duration
-
-#         self.time_step_after_repair += 1
-#         remaining_loss_of_function_time = max(0, self.current_loss_of_function_time - time_step_duration)
-#         self.current_loss_of_function_time = remaining_loss_of_function_time
-#         if self.current_loss_of_function_time == 0:
-#             self.is_functional = True
-#             self.current_income = self.max_income
-#         else:
-#             functionality_change = max(1.0, time_step_duration / self.current_loss_of_function_time)
-#             if functionality_change == 1.0:
-#                 self.current_income = self.max_income
-#                 return
-#             else:
-#                 income_increase = functionality_change * (self.max_income - self.current_income)
-#                 self.current_income = min(self.max_income, self.current_income + max(0.0, income_increase))
-
-#     def __log(
-#         self,
-#         msg
-#     ) -> None:
-#         if self.verbose:
-#             print(msg)
-
-#     def __str__(self):
-#         # damage state names
-#         damage_states = ['None', 'Slight', 'Moderate', 'Extensive', 'Complete']
-
-#         # formatted print string
-#         return f"""
-# Building: {self.id}, occupancy: {self.occtype}, total area: {self.sqft} sqft
-# --------------------
-# 1) Sampled Damage State: {damage_states[self.current_damage_state]}
-# 2) Initial Repair Time: {self.initial_repair_time} days
-# 3) Income Loss: $ {self.income_loss:,}
-# 4) Maximum Income: $ {self.max_income:,}
-# 5) Structural Repair Costs: $ {self.structural_repair_cost:,}
-# 7) Relocation Costs: $ {self.current_relocation_cost:,}
-# 6) Debris Weight: Tons {self.debris_weight:,}
-# 7) Debris Cleanup Time: {self.debris_cleanup_time:,}
-#         """
+    def __str__(self):
+        # damage state names
+        damage_states = ['None', 'Slight', 'Moderate', 'Extensive', 'Complete']
+
+        # formatted print string
+        return f"""
+Building: {self.id}, occupancy: {self.occtype}, total area: {self.sqft} sqft
+--------------------
+1) Sampled Damage State: {damage_states[self.current_damage_state]}
+2) Initial Repair Time: {self.initial_repair_time} days
+3) Income Loss: $ {self.income_loss:,}
+4) Maximum Income: $ {self.max_income:,}
+5) Structural Repair Costs: $ {self.initial_structural_repair_cost:,}
+7) Relocation Costs: $ {self.current_relocation_cost:,}
+6) Debris Weight: Tons {self.debris_weight:,}
+7) Debris Cleanup Time: {self.debris_cleanup_time:,}
+        """
 
 def make_building_objects(
     buildings_study_gdf: gpd.GeoDataFrame,
@@ -1783,14 +1545,14 @@ def make_building_objects(
 
 
     for idx, row in buildings_study_gdf.iterrows():
-        # damage_state_probs = np.array([
-        #     row[StudyBuildingSchema.PLS0],
-        #     row[StudyBuildingSchema.PLS1],
-        #     row[StudyBuildingSchema.PLS2],
-        #     row[StudyBuildingSchema.PLS3],
-        #     row[StudyBuildingSchema.PLS4]
-        # ])
-        damage_state_probs = np.array([0.0, 0.0, 0.0, 0.0, 1.0])
+        damage_state_probs = np.array([
+            row[StudyBuildingSchema.PLS0],
+            row[StudyBuildingSchema.PLS1],
+            row[StudyBuildingSchema.PLS2],
+            row[StudyBuildingSchema.PLS3],
+            row[StudyBuildingSchema.PLS4]
+        ])
+
 
         building_obj = Building(
             id=str(idx),
@@ -1804,7 +1566,14 @@ def make_building_objects(
             debris_capacity_reduction=row[StudyBuildingSchema.CAPACITY_REDUCTION],
             time_step_duration=time_step_duration,
             trucks_per_day=trucks_per_day,
-            verbose=False
+            verbose=False,
+            stoch_ds=True,
+            calc_debris=True,
+            stoch_rt=True,
+            stoch_cost=True,
+            stoch_inc_loss=True,
+            stoch_loss_of_function=True,
+            stoch_relocation_cost=True
         )
 
         building_objs.append(building_obj)

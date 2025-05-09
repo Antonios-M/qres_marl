@@ -328,6 +328,147 @@ class StructuralTypePredictor:
         else:
             raise ValueError("Invalid study label")
 
+class BuildingDowntimeDelays:
+    """
+    Table 8 from ARUPS's REDi framework: https://static1.squarespace.com/static/61d5bdb2d77d2d6ccd13b976/t/61e85a429039460930278463/1642617413050/REDi_Final+Version_October+2013+Arup+Website+%288%29.pdf
+    """
+    def __init__(
+        self,
+        essential: bool,
+        num_stories: int,
+        financing_method: str,
+        damage_state: int
+    ):
+        self.essential = essential
+        self.num_stories = num_stories
+        self.financing_method = financing_method ## "insurance" or "private_loans"
+        self.ds = damage_state
+
+
+
+    def permitting(self, ds:int):
+        _permitting = np.array([
+            [7, 0.86],
+            [7, 0.86],
+            [56, 0.32],
+            [56, 0.32],
+            [56, 0.32]
+        ])
+        mean, cov = _permitting[ds]
+        sigma = np.sqrt(np.log(1 + cov**2))
+        mu = np.log(mean) - 0.5 * sigma**2
+        delay = np.random.lognormal(mean=mu, sigma=sigma)
+        return delay
+
+    def contractor_mobilisation(self, essential: bool, num_stories: int, ds: int):
+        essential_facilities_lt_20_stories = np.array([
+            [49, 0.60],
+            [49, 0.60],
+            [133, 0.38],
+            [133, 0.38],
+            [133, 0.38]
+        ])
+        non_essential_facilities_leq_20_stories = np.array([
+            [77, 0.43],
+            [77, 0.43],
+            [161, 0.41],
+            [161, 0.41],
+            [161, 0.41]
+        ])
+        essential_facilities_gteq_20_stories = np.array([
+            [196, 0.30],
+            [196, 0.30],
+            [280, 0.31],
+            [280, 0.31],
+            [280, 0.31]
+        ])
+
+        if essential and num_stories < 20:
+            params = essential_facilities_lt_20_stories[ds]
+        elif essential and num_stories >= 20:
+            params = essential_facilities_gteq_20_stories[ds]
+        else:
+            params = non_essential_facilities_leq_20_stories[ds]
+        # Select parameters
+        if essential and num_stories < 20:
+            mean, cov = essential_facilities_lt_20_stories[ds]
+        elif essential and num_stories >= 20:
+            mean, cov = essential_facilities_gteq_20_stories[ds]
+        else:
+            mean, cov = non_essential_facilities_leq_20_stories[ds]
+
+        # Convert mean and COV (dispersion) to lognormal parameters
+        sigma = np.sqrt(np.log(1 + cov**2))
+        mu = np.log(mean) - 0.5 * sigma**2
+
+        # Sample from lognormal
+        delay = np.random.lognormal(mean=mu, sigma=sigma)
+
+        return delay
+
+    def financing(self, ds: int, method: str):
+        insurance = np.array([
+            [42, 1.11],
+            [42, 1.11],
+            [42, 1.11],
+            [42, 1.11],
+            [42, 1.11]
+        ])
+        private_loans = np.array([
+            [105, 0.68],
+            [105, 0.68],
+            [105, 0.68],
+            [105, 0.68],
+            [105, 0.68]
+        ])
+        if method == 'insurance':
+            params = insurance[ds]
+        else:
+            params = private_loans[ds]
+        mean, cov = params
+        sigma = np.sqrt(np.log(1 + cov**2))
+        mu = np.log(mean) - 0.5 * sigma**2
+        delay = np.random.lognormal(mean=mu, sigma=sigma)
+        return delay
+
+    def engineering_mobilisation(self, ds: int):
+        _engineering_mobilisation = np.array([
+            [42, 0.40],
+            [42, 0.40],
+            [105, 0.68],
+            [105, 0.68],
+            [105, 0.68]
+        ])
+        mean, cov = _engineering_mobilisation[ds]
+        sigma = np.sqrt(np.log(1 + cov**2))
+        mu = np.log(mean) - 0.5 * sigma**2
+        delay = np.random.lognormal(mean=mu, sigma=sigma)
+        return delay
+
+    def inspection(self, essential: bool):
+        _inspection = np.array([
+            [2, 0.54],
+            [5, 0.54]
+        ])
+        if essential:
+            mean, cov = _inspection[0]
+        else:
+            mean, cov = _inspection[1]
+        sigma = np.sqrt(np.log(1 + cov**2))
+        mu = np.log(mean) - 0.5 * sigma**2
+        delay = np.random.lognormal(mean=mu, sigma=sigma)
+        return delay
+
+    def get_delay_time(self):
+        delay_time = np.sum([
+            self.permitting(self.ds),
+            self.contractor_mobilisation(self.essential, self.num_stories, self.ds),
+            self.financing(self.ds, self.financing_method),
+            self.engineering_mobilisation(self.ds),
+            self.inspection(self.essential)
+        ])
+        return delay_time
+
 class BuildingRecoveryData:
     """
     Table 11-7 and 11-8 and 11-9 from (HAZUS, 2024)
@@ -617,7 +758,7 @@ class BuildingRecoveryData:
     }
 
     @staticmethod
-    def compute_repair_time_bins(time_step_duration: int) -> np.ndarray:
+    def compute_repair_time_bins() -> np.ndarray:
         """Compute the min and max repair time based on ±3 standard deviations."""
         all_repair_times = np.concatenate(list(BuildingRecoveryData.REPAIR_TIMES.values()))
 
@@ -634,7 +775,7 @@ class BuildingRecoveryData:
 
         bins = list(range(0, max_rt + 7, 7))
 
-        return np.array(bins)
+        return 0, max_rt
 
     @staticmethod
     def get_repair_time_bin(repair_time, bins):

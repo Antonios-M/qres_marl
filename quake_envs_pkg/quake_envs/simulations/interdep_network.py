@@ -21,6 +21,8 @@ from .road_funcs import StudyRoadsAccessor
 from .traffic_assignment import TrafficAccessor
 from .interdependencies import *
 import matplotlib.patches as mpatches
+from matplotlib.patches import Polygon as MplPolygon
+from shapely.geometry import Polygon, MultiPolygon
 
 class InterdependentNetworkSimulation:
     """
@@ -311,17 +313,24 @@ class InterdependentNetworkSimulation:
             color, label = get_building_color(row[StudyBuildingSchema.OCC_TYPE])
             buildings.iloc[[idx]].plot(ax=ax, color=color, edgecolor='black', alpha=0.5, label=label)
 
-        # Plot building debris rectangles
+        # Plot building debris rectangles with transparent fill and dotted black outline
         for idx, row in buildings.iterrows():
             geom = row[StudyBuildingSchema.DEBRIS_GEOM]
             if geom:
-                gpd.GeoDataFrame(geometry=[geom], crs=buildings.crs).plot(
-                    ax=ax,
-                    edgecolor='black',    # solid black outline
-                    facecolor='none',     # fully transparent fill
-                    linewidth=0.5,
-                    alpha=1.0             # fully opaque edge
-                )
+                if isinstance(geom, (Polygon, MultiPolygon)):
+                    geoms = [geom] if isinstance(geom, Polygon) else geom.geoms
+                    for poly in geoms:
+                        patch = MplPolygon(
+                            list(poly.exterior.coords),
+                            facecolor='orange',          # fully transparent fill
+                            alpha=0.2,
+                            edgecolor='black',         # solid black outline
+                            linewidth=0.5,
+                            linestyle=':',
+                            zorder=10             # dotted line
+                        )
+                        ax.add_patch(patch)
+
 
         # Plot traffic roads with dashed red lines and more prominent styling
         traffic_roads.plot(ax=ax, color='darkred', linewidth=1, linestyle='--', label='Traffic Routes')
@@ -336,6 +345,7 @@ class InterdependentNetworkSimulation:
                 line_width = 4
             # Plot each road with the appropriate line width
             roads.iloc[[idx]].plot(ax=ax, color='black', linewidth=line_width, alpha = 0.4)
+
         def bounds(gdf_list):
             x_min, y_min, x_max, y_max = None, None, None, None
             for gdf in gdf_list:
@@ -352,7 +362,7 @@ class InterdependentNetworkSimulation:
 
 
         x_min, y_min, x_max, y_max = bounds([buildings, roads, traffic_roads])
-        padding = 0.3
+        padding = 0.2
         x_range = x_max - x_min
         y_range = y_max - y_min
         ax.set_xlim(x_min - padding * x_range, x_max + padding * x_range)
@@ -380,12 +390,32 @@ class InterdependentNetworkSimulation:
         # Optionally show road IDs with their classification at midpoints
         if show_road_ids:
             for idx, row in roads.iterrows():
-                midpoint = row.geometry.interpolate(0.5, normalized=True)
-                label = row.get(StudyRoadSchema.HAZUS_BRIDGE_CLASS) if row.get(StudyRoadSchema.HAZUS_BRIDGE_CLASS) != "None" else row.get(StudyRoadSchema.HAZUS_ROAD_CLASS)
+                line = row.geometry
+                midpoint = line.interpolate(0.5, normalized=True)
+
+                # Get label
+                label = row.get(StudyRoadSchema.HAZUS_BRIDGE_CLASS)
+                if label == "None":
+                    label = row.get(StudyRoadSchema.HAZUS_ROAD_CLASS)
+
+                label = label + "_" + str(idx)
                 if label:
+                    # Compute angle at midpoint
+                    try:
+                        # Take two points close to the midpoint for angle calculation
+                        p1 = line.interpolate(0.49, normalized=True)
+                        p2 = line.interpolate(0.51, normalized=True)
+                        dx = p2.x - p1.x
+                        dy = p2.y - p1.y
+                        angle = np.degrees(np.arctan2(dy, dx))
+                    except:
+                        angle = 0
+
                     ax.text(
                         midpoint.x, midpoint.y, str(label),
-                        fontsize=10, color='darkslateblue', ha='center', va='center', fontweight='bold', rotation=45
+                        fontsize=10, color='darkslateblue', ha='center', va='center',
+                        fontweight='bold', rotation=angle,
+                        bbox=dict(boxstyle="round,pad=0.2", facecolor='white', edgecolor='none')
                     )
 
         # Set a more descriptive and professional title

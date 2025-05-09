@@ -35,7 +35,7 @@ class StudyRoadSchema(INCORERoadSchema):
     HAZUS_ROAD_CLASS: Final[str] = 'hazus_r'  # Hazus road class
     HAZUS_BRIDGE_CLASS: Final[str] = 'hazus_b'
     PGD: Final[str] = 'PGD'  # Peak ground displacement
-    SA03SEC: Final[str] = '0.3 SA' 
+    SA03SEC: Final[str] = '0.3 SA'
     SA1SEC: Final[str] = '1.0 SA'
     BRIDGE_SHAPE: Final[str] = 'i_shape'
     SKEW_ANGLE: Final[str] = 'skew_angle'
@@ -74,10 +74,10 @@ class OSMHazusRoadMapper:
     def get_hazus_road_type(cls, osm_highway):
         """
         Convert OSM highway type to HAZUS road type.
-        
+
         Args:
             osm_highway (str): OSM highway type
-        
+
         Returns:
             str: Corresponding HAZUS road type
         """
@@ -87,10 +87,10 @@ class OSMHazusRoadMapper:
     def get_hazus_road_width(cls, hazus_road_class):
         """
         Get the width of a road based on its HAZUS class.
-        
+
         Args:
             hazus_road_class (str): HAZUS road class
-        
+
         Returns:
             float: Road width
         """
@@ -100,7 +100,7 @@ class OSMHazusRoadMapper:
 @dataclass (frozen=True)
 class FHWARoadReplacementCosts:
     """
-    Appendix A-1 from https://www.fhwa.dot.gov/policy/23cpr/appendixa.cfm 
+    Appendix A-1 from https://www.fhwa.dot.gov/policy/23cpr/appendixa.cfm
     """
     osm_highway_type: str
 
@@ -125,7 +125,7 @@ class FHWARoadReplacementCosts:
 class RoadReplacementCosts:
     COSTS: Dict = {
         'HRD1': {'reconstruct': 7675, 'resurface': 1483},
-        'HRD2': {'reconstruct': 2929, 'resurface': 703},   
+        'HRD2': {'reconstruct': 2929, 'resurface': 703},
     }
     def get_costs(self, hazus_road_class: str):
         return self.COSTS[hazus_road_class]
@@ -139,18 +139,18 @@ class RoadRepairDistributions:
     """
     DISTRIBUTIONS: Dict[str, Tuple[float, float]] = {
         0: (0, 0),
-        1: (0.9, 0.05),
-        2: (2.2, 1.8),
-        3: (21, 16),
-        4: (21, 16),
+        1: (5, 0.05),
+        2: (20, 0.1),
+        3: (40, 2),
+        4: (80, 5),
     }
     def get_distribution(self, damage_state: str) -> Tuple[float, float]:
         """
         Retrieve the repair times for a specific damage state.
-        
+
         Args:
             damage_state (str): The damage state
-        
+
         Returns:
             Tuple[float, float]: The mean and standard deviation for the repair time distribution
         """
@@ -159,7 +159,7 @@ class RoadRepairDistributions:
         return self.DISTRIBUTIONS[damage_state]
 
     @staticmethod
-    def compute_repair_time_bins(time_step_duration: int):
+    def compute_repair_time_bins():
         """Compute min/max repair time bins based on ±3 standard deviations."""
         means, stds = zip(*RoadRepairDistributions.DISTRIBUTIONS.values())
 
@@ -173,10 +173,9 @@ class RoadRepairDistributions:
         min_rt = math.ceil(min_time)
         max_rt = math.ceil(max_time)
 
-        # Create repair time bins
-        bins = [0] + list(range(7, max_rt + 7, 7))
-        return np.array(bins)
-    
+
+        return 0, max_rt
+
     @staticmethod
     def get_repair_time_bin(repair_time, bins):
         """
@@ -201,10 +200,10 @@ class BridgeRepairDistributions:
     def get_distribution(self, damage_state: str) -> Tuple[float, float]:
         """
         Retrieve the repair times for a specific damage state.
-        
+
         Args:
             damage_state (str): The damage state
-        
+
         Returns:
             Tuple[float, float]: The mean and standard deviation for the repair time distribution
         """
@@ -213,7 +212,7 @@ class BridgeRepairDistributions:
         return self.DISTRIBUTIONS[damage_state]
 
     @staticmethod
-    def compute_repair_time_bins(time_step_duration: int):
+    def compute_repair_time_bins():
         """Compute min/max repair time bins based on ±3 standard deviations."""
         means, stds = zip(*BridgeRepairDistributions.DISTRIBUTIONS.values())
 
@@ -227,10 +226,7 @@ class BridgeRepairDistributions:
         min_rt = math.ceil(min_time)
         max_rt = math.ceil(max_time)
 
-        # Create repair time bins
-        bins = [0] + list(range(7, max_rt + 7, 7))
-        return np.array(bins)
-    
+        return 0, max_rt
     @staticmethod
     def get_repair_time_bin(repair_time, bins):
         """
@@ -240,14 +236,14 @@ class BridgeRepairDistributions:
         """
         if repair_time == 0:
             return 0  # Separate bin for 0
-        
+
         # Get the index where the repair_time would fit
         index = np.searchsorted(bins, repair_time, side="right")
-        
+
         # If the index is beyond the last bin, return the last index
         if index >= len(bins):
             return len(bins) - 1  # Last bin index
-        
+
         return index
 
 class BridgeRepairCost:
@@ -287,7 +283,7 @@ class BridgeRepairCost:
         hazus_bridge_class
     ):
         return self.COSTS[hazus_bridge_class]
-    
+
 
 
 
@@ -300,24 +296,24 @@ class FragilityRoadPGD:
             int, Tuple[float, float]
         ]] =  {
         "HRD1": {
-            1: (12, 0.7), 
-            2: (24, 0.7), 
-            3: (60, 0.7), 
+            1: (12, 0.7),
+            2: (24, 0.7),
+            3: (60, 0.7),
             4: (60, 0.7)
         },
         'HRD2': {
-            1: (6, 0.7), 
-            2: (12, 0.7), 
-            3: (24, 0.7), 
+            1: (6, 0.7),
+            2: (12, 0.7),
+            3: (24, 0.7),
             4: (24, 0.7)
         }
-        
+
     }
 
     def get_distribution(self, road_type: str) -> Dict[str, Tuple[float, float]]:
         """
         Retrieve the repair times for a specific occupancy type.
-        
+
         :param str_type: The occupancy type code (e.g., 'W1', 'S4L')
         :return: Dictionary of damage states and their mean PGA and beta values
         :raises KeyError: If the str_type type is not found in the distributions
@@ -333,7 +329,7 @@ class NBISchema:
     """
 
     # Hazus bridge fragility classes are a mapping from NBI attributes:
-    # Refer to Hazus 6.0 Inventory Manual Table 9-6 : 
+    # Refer to Hazus 6.0 Inventory Manual Table 9-6 :
     # https://www.fema.gov/sites/default/files/documents/fema_hazus-6-inventory-technical-manual.pdf
 
 
@@ -342,61 +338,61 @@ class NBISchema:
     # Structural Attributes:
     # from https://www.fhwa.dot.gov/bridge/mtguide.pdf
     """
-    Item 43A and 43B - Structure Type, Main                               3 digits 
+    Item 43A and 43B - Structure Type, Main                               3 digits
 
-    Record the description on the inspection form and indicate the type of 
-    structure for the main span(s) with a 3-digit code composed of 2 
-    segments. 
+    Record the description on the inspection form and indicate the type of
+    structure for the main span(s) with a 3-digit code composed of 2
+    segments.
 
-    Segment          Description                             Length 
+    Segment          Description                             Length
 
-        43A            Kind of material and/or design          1 digit 
-        43B            Type of design and/or construction      2 digits 
+        43A            Kind of material and/or design          1 digit
+        43B            Type of design and/or construction      2 digits
     """
-    STRUCTURE_1: Final[str] = "STRUCTUR_1" 
+    STRUCTURE_1: Final[str] = "STRUCTUR_1"
     STRUCTURE_2: Final[str] = "STRUCTUR_2"
 
     # Geometric Attributes
     # from https://www.fhwa.dot.gov/bridge/mtguide.pdf
     """
-        Item 48 - Length of Maximum Span (xxxx.x meters)             5 digits 
-    
-    The length of the maximum span shall be recorded.  It shall be noted 
-    whether the measurement is center to center of bearing points or clear 
-    open distance between piers, bents, or abutments.  The measurement shall 
-    be along the centerline of the bridge.  For this item, code a 5-digit 
-    number to represent the measurement to the nearest tenth of a meter 
-    (with an assumed decimal point). 
-    
-    EXAMPLES:                               |   Code 
+        Item 48 - Length of Maximum Span (xxxx.x meters)             5 digits
+
+    The length of the maximum span shall be recorded.  It shall be noted
+    whether the measurement is center to center of bearing points or clear
+    open distance between piers, bents, or abutments.  The measurement shall
+    be along the centerline of the bridge.  For this item, code a 5-digit
+    number to represent the measurement to the nearest tenth of a meter
+    (with an assumed decimal point).
+
+    EXAMPLES:                               |   Code
     ________________________________________|_________
-    Length of Maximum Span: 35.5 meters     |  00355 
-                            117.0 meters    |  01170 
+    Length of Maximum Span: 35.5 meters     |  00355
+                            117.0 meters    |  01170
                             1219.2 meters   |  12192
     """
     LENGTH_MAX_SPAN: Final[str] = "MAX_SPAN_L"
     NUM_SPANS: Final[str] = 'MAIN_UNIT_'
     """
-    Item 52 - Deck Width, Out-to-Out (xxx.x meters)              4 digits  
+    Item 52 - Deck Width, Out-to-Out (xxx.x meters)              4 digits
 
-    Record and code a 4-digit number to show the out-to-out width to the 
-    nearest tenth of a meter (with an assumed decimal point).  If the 
-    structure is a through structure, the number to be coded will represent 
-    the lateral clearance between superstructure members.  The measurement 
-    should be exclusive of flared areas for ramps.  See examples on pages 30 
-    and 31. 
+    Record and code a 4-digit number to show the out-to-out width to the
+    nearest tenth of a meter (with an assumed decimal point).  If the
+    structure is a through structure, the number to be coded will represent
+    the lateral clearance between superstructure members.  The measurement
+    should be exclusive of flared areas for ramps.  See examples on pages 30
+    and 31.
 
-    Where traffic runs directly on the top slab (or wearing surface) of the 
-    culvert (e.g., an R/C box without fill) code the actual width 
-    (out-to-out).  This will also apply where the fill is minimal and the 
-    culvert headwalls affect the flow of traffic.  However, for sidehill 
-    viaduct structures code the actual out-to-out structure width.  See 
-    figure in the Commentary Appendix D.   
+    Where traffic runs directly on the top slab (or wearing surface) of the
+    culvert (e.g., an R/C box without fill) code the actual width
+    (out-to-out).  This will also apply where the fill is minimal and the
+    culvert headwalls affect the flow of traffic.  However, for sidehill
+    viaduct structures code the actual out-to-out structure width.  See
+    figure in the Commentary Appendix D.
 
-    Where the roadway is on a fill carried across a pipe or box culvert and 
-    the culvert headwalls do not affect the flow of traffic, code 0000.  
-    This is considered proper inasmuch as a filled section over a culvert 
-    simply maintains the roadway cross-section. 
+    Where the roadway is on a fill carried across a pipe or box culvert and
+    the culvert headwalls do not affect the flow of traffic, code 0000.
+    This is considered proper inasmuch as a filled section over a culvert
+    simply maintains the roadway cross-section.
 
     """
     WIDTH_END_TO_END: Final[str] = "APPR_WIDTH"
@@ -419,7 +415,7 @@ class NBISchema:
 @dataclass (frozen=True)
 class FragilityBridgeSA_PGD:
     """
-    Compact storage and lookup of fragility data with mean values for Sa (1.0 sec in g's) 
+    Compact storage and lookup of fragility data with mean values for Sa (1.0 sec in g's)
     and PGD (inches) for different bridge types and damage states.
 
     Structure:
@@ -467,7 +463,7 @@ class FragilityBridgeSA_PGD:
     def get_medians(self, bridge_type: str) -> Dict[str, Tuple[float, float]]:
         """
         Retrieve the repair times for a specific occupancy type.
-        
+
         :param str_type: The occupancy type code (e.g., 'W1', 'S4L')
         :return: Dictionary of damage states and their mean PGA and beta values
         :raises KeyError: If the str_type type is not found in the distributions
@@ -495,10 +491,10 @@ class HAZUSBridge_k3d_coefficients:
     def get_coefficients(hwb_label: str):
         """
         Retrieves the coefficients corresponding to an HWB label.
-        
+
         Args:
             hwb_label (str): The HWB label, e.g., 'HWB1'.
-        
+
         Returns:
             Tuple[float, int]: The corresponding equation coefficients.
         """
@@ -507,7 +503,7 @@ class HAZUSBridge_k3d_coefficients:
             hwb_number = int(hwb_label[3:])  # Assumes HWB label starts with 'HWB'
         except (IndexError, ValueError):
             raise ValueError(f"Invalid HWB label format: {hwb_label}")
-        
+
         if 6 <= hwb_number <= 10:
             return HAZUSBridge_k3d_coefficients.coefficients_map["EQ2"]
         elif 11 <= hwb_number <= 15:
@@ -526,9 +522,9 @@ class HAZUSBridge_k3d_coefficients:
 
 class BridgeModificationFactors:
     """
-    Utility class for calculating bridge modification factors based on 
+    Utility class for calculating bridge modification factors based on
     HAZUS bridge fragility methodology.
-    
+
     Reference: FEMA HAZUS Earthquake Model Technical Manual
     """
 
@@ -536,10 +532,10 @@ class BridgeModificationFactors:
     def calculate_kskew(skew_angle: int) -> float:
         """
         Calculate skew modification factor.
-        
+
         Args:
             skew_angle (int): Skew angle of the bridge.
-        
+
         Returns:
             float: Skew modification factor.
         """
@@ -551,11 +547,11 @@ class BridgeModificationFactors:
     def calculate_kshape(sa_0_3: float, sa_1_0: float) -> float:
         """
         Calculate shape modification factor.
-        
+
         Args:
             sa_0_3 (float): Spectral acceleration at 0.3 seconds.
             sa_1_0 (float): Spectral acceleration at 1.0 seconds.
-        
+
         Returns:
             float: Shape modification factor.
         """
@@ -565,10 +561,10 @@ class BridgeModificationFactors:
     def calculate_k3d(coefficients: Tuple[float, int], num_spans) -> float:
         """
         Calculate 3D modification factor.
-        
+
         Args:
             coefficients (Tuple[float, int]): Coefficients for K3d calculation.
-        
+
         Returns:
             float: 3D modification factor.
         """
@@ -580,7 +576,7 @@ class BridgeModificationFactors:
             b = float(b)
         if isinstance(num_spans, str):
             num_spans = int(num_spans)
-        
+
         return (1 + a) / (num_spans - b)
 
 
@@ -601,9 +597,9 @@ class FragilityBridgeSAModifier:
     ) -> None:
         """
         Initialize bridge spectral acceleration modifier.
-        
+
         Args:
-            bridge_fragility (Dict[DamageStates, Dict[str, float]]): 
+            bridge_fragility (Dict[DamageStates, Dict[str, float]]):
                 Fragility data for different damage states.
             sa_0_3 (float): Spectral acceleration at 0.3 seconds.
             sa_1_0 (float): Spectral acceleration at 1.0 seconds.
@@ -622,22 +618,22 @@ class FragilityBridgeSAModifier:
     def calculate_slight_modification_factor(self) -> float:
         """
         Calculate modification factor for slight damage state.
-        
+
         Returns:
             float: Modification factor for slight damage.
         """
         if self.bridge_shape == 0:
             return 1.0
-        
+
         return BridgeModificationFactors.calculate_kshape(
-            self.sa_0_3, 
+            self.sa_0_3,
             self.sa_1_0
         )
 
     def modify_spectral_accelerations(self) -> Dict[int, Tuple[float, float]]:
         """
         Modify spectral accelerations for different damage states.
-        
+
         Returns:
             Dict[DamageStates, Dict[str, float]]: Modified fragility data.
         """
@@ -658,8 +654,8 @@ class FragilityBridgeSAModifier:
         # print(self.bridge_fragility)
         for ds in [
             DamageStates.SLIGHT.value,
-            DamageStates.MODERATE.value, 
-            DamageStates.EXTENSIVE.value, 
+            DamageStates.MODERATE.value,
+            DamageStates.EXTENSIVE.value,
             DamageStates.COMPLETE.value
         ]:
             sa, pgd = self.bridge_fragility[ds]

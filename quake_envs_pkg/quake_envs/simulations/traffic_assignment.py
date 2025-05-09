@@ -706,21 +706,6 @@ class TrafficMonetaryValues:
     MEAN_BUSINESS_PERSONAL_RATIO = np.mean(BUSINESS_PERSONAL_RATIOS, axis=0)
     STD_BUSINESS_PERSONAL_RATIO = np.std(BUSINESS_PERSONAL_RATIOS, axis=0)
 
-    # TT_COST_VALUES = { ## source: https://www.vtpi.org/tca/tca0502.pdf
-    #     'local': {
-    #         'personal': 13.6,
-    #         'business': 25.40
-    #     },
-    #     'intercity': {
-    #         'personal': 19.0,
-    #         'business': 63.20,
-    #         'truck': 27.20,
-    #         'bus': 28.30,
-    #         'train': 46.10,
-    #         'airplane': 86.70
-    #     }
-    # }
-
     def personal(
         self,
         med_income: float = 52000.0, ## median annual income of the area

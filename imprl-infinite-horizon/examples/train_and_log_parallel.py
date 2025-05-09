@@ -45,7 +45,7 @@ agent_class = imprl.agents.get_agent_class(ALGORITHM)
 LearningAgent = agent_class(env, alg_config, device)  # initialize agent
 print(f"Loaded default configuration for {ALGORITHM}.")
 
-PROJECT = "main-VDN-PS-4-comp-v1"
+PROJECT = "VDN_PS_refactored_imprl"
 ENTITY = "antoniosmavrotas-tu-delft"
 # WANDB_DIR = "./experiments/data"
 # WANDB_DIR = "/scratch/pbhustali"
