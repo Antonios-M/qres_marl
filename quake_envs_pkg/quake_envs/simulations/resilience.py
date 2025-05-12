@@ -146,6 +146,34 @@ class Resilience:
             yearly_delay_cost = sum([b.max_income for b in self.buildings_objs])
         return yearly_delay_cost
 
+    def get_building_info(self):
+        rts = []
+        dss = []
+        rcs = []
+        incs = []
+        relocs = []
+        for info in self.info_buildings:
+            rts.append(info["repair_time"])
+            dss.append(info["damage_state"])
+            rcs.append(info["repair_cost"])
+            incs.append(info["income"])
+            relocs.append(info["relocation_cost"])
+        return (rts, dss, rcs, incs, relocs)
+
+    def get_road_info(self):
+        rts = []
+        dss = []
+        rcs = []
+        crds = []
+        for info in self.info_roads:
+            rts.append(info["repair_time"])
+            dss.append(info["damage_state"])
+            rcs.append(info["repair_cost"])
+            crds.append(info["capacity_reduction"])
+
+        return (rts, dss, rcs, crds)
+
+
     def get_info(self):
         info = {
             "income": sum([b.current_income for b in self.buildings_objs]),
@@ -266,8 +294,9 @@ class Resilience:
     def step(self,
         actions: tuple
     ) -> None:
-        # original_actions = np.array(actions)
-        # actions = self.__prioritise_actions(original_actions)
+        original_actions = np.array(actions)
+        actions = self.__prioritise_actions(original_actions)
+        # print(f"Stepping actions: {actions}")
 
         # Check if actions changed during prioritization (agents chose too many repair actions for n_crews available)
         # self.actions_changed = not np.array_equal(actions, original_actions)
@@ -416,7 +445,7 @@ class Resilience:
         )
         return truncation_conditions_met
 
-    def __assign_random_normalized_ranks(self):
+    def __assign_random_ranks(self):
         """
         Assigns a unique random rank (normalized between 0 and 1) to each road and building.
         The highest rank gets a value of 1.0, lowest gets 0.0.
@@ -437,6 +466,7 @@ class Resilience:
         actions: np.ndarray
     ) -> np.ndarray:
         # Split actions
+        self.__assign_random_ranks()
         building_actions = actions[:self.num_buildings]
         road_actions = actions[self.num_roads:]
 
@@ -449,7 +479,7 @@ class Resilience:
                 indexed_actions.append((i, value))
 
         for i, action in enumerate(road_actions):
-            if RoadAction(action) not in  [RoadAction.DO_NOTHING, RoadAction.DO_NOTHING_temp] :
+            if RoadAction(action) == RoadAction.REPAIR :
                 value = self.road_objs[i].value
                 indexed_actions.append((self.num_buildings + i, value))
 

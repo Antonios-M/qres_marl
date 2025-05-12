@@ -435,19 +435,37 @@ def get_road_obs_bounds():
     return min_obs, max_obs
 
 def get_road_repair_time(damage_state):
+    COMPONENTS_PER_ROAD = 6
     repair_time_model =  RoadRepairDistributions()
-    mu, sigma = repair_time_model.get_distribution(damage_state)
+    med, disp = repair_time_model.get_distribution(damage_state)
+    if med == 0:
+        return 0
+    med *= COMPONENTS_PER_ROAD
     _, max_rt = get_road_obs_bounds()
-    rt = max(0, math.ceil(np.random.normal(mu, sigma)))
-    rt = min(rt, max_rt)
+    sigma = math.sqrt(math.log(1 + disp**2))
+    mu = math.log(med)
+
+    # Sample from lognormal
+    sample = np.random.lognormal(mean=mu, sigma=sigma)
+
+    # Round up and clip to max
+    rt = min(math.ceil(sample), max_rt)
     return rt
 
 def get_bridge_repair_time(damage_state):
     repair_time_model = BridgeRepairDistributions()
-    mu, sigma = repair_time_model.get_distribution(damage_state)
+    med, disp = repair_time_model.get_distribution(damage_state)
+    if med == 0:
+        return 0
     _, max_rt = get_road_obs_bounds()
-    rt = max(0, math.ceil(np.random.normal(mu, sigma)))
-    rt = min(rt, max_rt)
+    sigma = math.sqrt(math.log(1 + disp**2))
+    mu = math.log(med)
+
+    # Sample from lognormal
+    sample = np.random.lognormal(mean=mu, sigma=sigma)
+
+    # Round up and clip to max
+    rt = min(math.ceil(sample), max_rt)
     return rt
 
 class StudyRoadsAccessor:
@@ -832,8 +850,8 @@ class Road:
 
         # Apply cost reduction based on the chosen decay method
         if self.cost_decay == "linear":
-            # Linear decay
             repair_fraction = time_step_duration / self.initial_repair_time
+            # Linear decay
             cost_reduction = repair_fraction * self.initial_repair_cost
             self.current_repair_cost = max(0, self.current_repair_cost - cost_reduction)
         else:
@@ -842,12 +860,12 @@ class Road:
             self.current_repair_cost = self.initial_repair_cost * remaining_cost_fraction
 
         # Apply damage state capacity reduction, using the quadratic decay as well
-        # self.capacity_red_damage_state = round(
-        #     max(0.0, (
-        #         self.capacity_red_damage_state - (fraction_complete * self.capacity_red_damage_state)
-        #     )), 3)
-        if self.current_damage_state == 0:
-            self.capacity_red_damage_state = 0.0
+        self.capacity_red_damage_state = round(
+            max(0.0, (
+                self.capacity_red_damage_state - (fraction_complete * self.capacity_red_damage_state)
+            )), 3)
+        # if self.current_damage_state == 0:
+        #     self.capacity_red_damage_state = 0.0
 
 
         # Update the total capacity reduction
@@ -882,6 +900,7 @@ class Road:
 
     def __get_info(self):
         info = {
+                'damage_state': self.current_damage_state,
                 'repair_time': self.current_repair_time,
                 'repair_cost': self.current_repair_cost,
                 'is_fully_repaired': self.is_fully_repaired,

@@ -848,7 +848,8 @@ def get_building_repair_time(
     # Validate damage state
     if not (isinstance(damage_state, (int, np.integer)) and 0 <= damage_state <= 4):
         raise ValueError("Damage state must be an integer between 0 and 4")
-
+    if damage_state == 0:
+        return 0
     building_recovery_model = BuildingRecoveryData()
     mean_repair_times = building_recovery_model.get_repair_time(occ_type)
 
@@ -1319,6 +1320,7 @@ class Building:
 
     def __get_info(self):
         info = {
+            "damage_state": self.current_damage_state,
             'repair_time': self.current_repair_time,
             'has_debris': self.has_debris,
             'is_fully_repaired': self.is_fully_repaired,

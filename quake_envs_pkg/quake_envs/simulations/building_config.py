@@ -8,7 +8,7 @@ import sys
 import os
 from . import utils
 
-# Constants for essential facility occupation types
+# hazus essential facility designations
 ESSENTIAL_FACILITY_OCC_TYPES: Final[List[str]] = ['GOV2', 'COM6']
 
 @dataclass(frozen=True)
@@ -104,7 +104,9 @@ class MaterialLabel:
 
 class CollapseFunctions:
     """
-    Contains the different collapse functions for various materials.
+    Contains the different collapse functions for different building types.
+    - doi: 10.1061/(ASCE)NH.1527-6996.0000538
+    - url: https://ascelibrary.org/doi/10.1061/%28ASCE%29NH.1527-6996.0000538
     """
     @staticmethod
     def masonry_collapse(L: float, W: float, Af: float, h: float, Vb: float) -> float:
@@ -148,16 +150,9 @@ class CollapseFunctions:
 
         return float(dim_a), float(dim_b), float(dim_c), float(dim_d)
 
-    # @staticmethod
-    # def all_other_collapse(W: float, H: float, kv: float = utils.sample_lognormal(0.5, 0.15), theta: float = utils.sample_lognormal(45, 13.5)) -> float:
-    #     """
-    #     Generic collapse function for materials like Steel, Wood, Manufactured
-    #     """
-    #     return math.sqrt(W**2 + ((2 * kv * W * H) / math.tan(theta)) - W)
     @staticmethod
     def all_other_collapse(W: float, H: float, kv: float = None, theta: float = None) -> float:
-        # Function to extract first item if input is a list or NumPy array
-        def get_scalar(value):
+        def get_scalar(value): ## this prevents errors when passing in numpy arrays
             if isinstance(value, np.ndarray):
                 return value.item()  # Explicitly extract scalar
             elif isinstance(value, list):
@@ -165,11 +160,10 @@ class CollapseFunctions:
             return value
 
         # Apply scalar extraction to inputs
-
         if kv is None:
             kv = utils.sample_lognormal(0.5, 0.15)
         if theta is None:
-            theta = max(5, min(utils.sample_lognormal(45, 13.5), 80))\
+            theta = max(5, min(utils.sample_lognormal(45, 13.5), 80))
 
         W = get_scalar(W)
         H = get_scalar(H)
@@ -214,7 +208,6 @@ class HeightCodes:
 @dataclass (frozen=True)
 class StructuralTypePredictor:
     def get_height_code(self, num_stories: int) -> str:
-        """Determine height code based on number of stories"""
         if num_stories <= StoryThresholds.LOW:
             return HeightCodes.LOW
         elif num_stories <= StoryThresholds.MEDIUM:
@@ -251,7 +244,6 @@ class StructuralTypePredictor:
         sq_footage: int,
         num_stories: int
     ) -> str:
-        """Predict structural type for concrete buildings"""
         if building_occupancy in [BuildingOccupancy.COMMERCIAL,
                                 BuildingOccupancy.INDUSTRIAL,
                                 BuildingOccupancy.PUBLIC]:
@@ -271,14 +263,14 @@ class StructuralTypePredictor:
         building_occupancy: BuildingOccupancy,
         num_stories: int
     ) -> str:
-        """Predict structural type for steel buildings"""
-        if building_occupancy in [BuildingOccupancy.COMMERCIAL,
-                                    BuildingOccupancy.INDUSTRIAL,
-                                    BuildingOccupancy.PUBLIC]:
-
+        non_residential = [ ## add more as needed
+            BuildingOccupancy.COMMERCIAL,
+            BuildingOccupancy.INDUSTRIAL,
+            BuildingOccupancy.PUBLIC
+        ]
+        if building_occupancy in non_residential:
             material = random.choice(BuildingMaterials.STEEL_COMMERCIAL)
             return material + self.get_height_code(num_stories)
-
         else:  # Residential
             material = random.choice(BuildingMaterials.STEEL_RESIDENTIAL)
             if material == 'S3':
@@ -286,7 +278,6 @@ class StructuralTypePredictor:
             return material + self.get_height_code(num_stories)
 
     def predict_wood_type(self, sq_footage: int) -> str:
-        """Predict structural type for wood buildings"""
         return 'W2' if sq_footage <= SquareFootageThresholds.WOOD else 'W1'
 
     def predict_str_type(
@@ -303,7 +294,7 @@ class StructuralTypePredictor:
             study_label: Material type (M, C, S, W, H)
             num_stories: Number of stories in building
             sq_footage: Square footage of building
-            building_occupancy: Building use (COM, IND, PUB, RES)
+            building_occupancy: HAZUS Occupancy Designation
 
         Returns:
             str: Predicted structural type code
@@ -941,7 +932,7 @@ class BuildingRecoveryData:
 
 class BuildingReplacementCosts:
     """
-    Table 6-2 and 6-3 from (HAZUS, 2024)
+    Table 6-2 and 6-3 from HAAZUS Inventory Technical Manual
     """
     OCCUPANCIES: Dict[Tuple[str, int], List[float]] = {
         # (Occupancy Type, Number of Stories): [Building Replacement Cost per sqft, Vehicle Replacement Cost]
@@ -1118,15 +1109,7 @@ class AnnualGrossSalary:
 
 class FragilityBuildingPGA_low_code:
     """
-    Compact storage and lookup of fragility data with mean and standard deviations
-    for different structure types and damage states.
-
-    Structure:
-    {
-        occtype: {
-            damage_state: (median_pga, std_dev_pga)
-        }
-    }
+        Table 5-39 Hazus 6.0 Earthquake Model Technical Manual
     """
 
     DISTRIBUTIONS: Dict[str, Dict[int, Tuple[float, float]]] = {
@@ -1182,7 +1165,7 @@ class FragilityBuildingPGA_low_code:
 
 class DebrisUnitWeight:
     """
-        Table 10-1
+        Table 10-1 from Hazus 6.0 Earthquake Model Technical Manual
     """
     UNIT_WEIGHTS = {
         ## unit weight in tons per 1000 sqft

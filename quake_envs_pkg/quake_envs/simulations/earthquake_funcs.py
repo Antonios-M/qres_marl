@@ -320,6 +320,7 @@ class EarthquakeAccessor:
     def __init__(self, parent_instance):
         self._parent = parent_instance
         self._validate_parent_instance()
+        self.magnitude = None
 
     def _validate_parent_instance(self):
         """
@@ -583,9 +584,54 @@ class EarthquakeAccessor:
 
         self._parent._buildings_study_gdf[StudyBuildingSchema.PGA] = building_PGA
 
+    def threshold_PGA_liquefaction(self, pga, M)->float:
+        """
+        Hazus manual table 4-10 and Figure 4-12
+        """
+        ## equation 4-9
+        map_units = np.array([0.0,0.02,0.05,0.1,0.2,0.25]) ## table 4-10
+        threshold_pgas = np.array([-1, 0.26, 0.21, 0.15, 0.12, 0.09]) ## table 4-12
+        cat_probs = np.array([ ## table 4-11
+            max(0.0, 9.09 * pga - 0.82),
+            max(0.0, 7.67 * pga - 0.92),
+            max(0.0, 6.67 * pga - 1.0),
+            max(0.0, 5.57 * pga - 1.18),
+            max(0.0, 4.16 * pga - 1.08),
+            0.0
+        ])
+        k_M = 0.0027 * (M**3) - (0.0267 * M**2) - (0.2055 * M) + 2.9188 ## eq 4-10
+        k_w = 0.022 * 20 + 0.93 ## eq 4-11, assumed 20ft depth to groundwater
+        liquefaction_probs = np.zeros(6)
+
+        for i in range(len(liquefaction_probs)):
+            liquefaction_probs[i] = ( cat_probs[i] / (k_M * k_w) ) * map_units[i]
+
+        ## normalise liquefaction probabilities
+        total = np.sum(liquefaction_probs)
+        if total > 0:
+            liquefaction_probs /= total
+        else:
+            liquefaction_probs[-1] = 1.0
+
+        liquefaction_cat = np.random.choice(len(liquefaction_probs), p=liquefaction_probs)
+        pga_threshold = threshold_pgas[liquefaction_cat]
+
+        return pga_threshold
+
+    def lateral_spreading(self, pga_ratio):
+        if pga_ratio < 1.0:
+            return 0.0
+        elif 1.0 <= pga_ratio < 2.0:
+            return 12 * pga_ratio - 12
+        elif 2.0 <= pga_ratio < 3.0:
+            return 18 * pga_ratio - 24
+        else:
+            return 70 * pga_ratio - 180
+
     def POST_incore_eq_road_hazard_values(self,
         client: IncoreClient,
-        eq_id : str
+        eq_id : str,
+        M: float
     ) -> None:
         hazardsrvc = HazardService(client)
         roads = self._parent._roads_study_gdf
@@ -602,8 +648,8 @@ class EarthquakeAccessor:
 
             points.append(
                 {
-                    "demands": ["0.3 SA", "1.0 SA", "0.25 SD", "0.5 SD", "0.75 SD", "1.0 SD", "1.25 SD", "1.5 SD", "1.75", "2.0 SD"],
-                    "units": ["g", "g", "in", "in", "in", "in", "in", "in", "in", "in"],
+                    "demands": ["0.3 SA", "1.0 SA", "PGA"],
+                    "units": ["g", "g", "g"],
                     "loc": str(y) + "," + " " + str(x)
                 }
             )
@@ -612,7 +658,17 @@ class EarthquakeAccessor:
         for i, hazard_dict in enumerate(eq_model_vals):
             sa0_3 = hazard_dict['hazardValues'][0]
             sa1_0 = hazard_dict['hazardValues'][1]
-            pgd = max(hazard_dict['hazardValues'][2:10]) / 2.3 ## Equation by Edmund Booth, 2007 DOI: 10.1080/13632460601123156
+            pga = hazard_dict['hazardValues'][2]
+
+            pga_threshold = self.threshold_PGA_liquefaction(pga=pga, M=M)
+            if pga == 0.0:
+                pgd = 0.0
+            else:
+                k_delta = (0.0086 * M**3) - (0.0914 * (M**2)) + (0.4698 * M) - 0.9835 ## eq 4-13, hazus quake manual 2024
+                pga_ratio = pga / pga_threshold
+                pgd = self.lateral_spreading(pga_ratio) * k_delta
+
+
 
             road_0_3_SA.append(sa0_3)
             road_1_0_SA.append(sa1_0)

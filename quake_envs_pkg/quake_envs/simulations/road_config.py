@@ -35,6 +35,7 @@ class StudyRoadSchema(INCORERoadSchema):
     HAZUS_ROAD_CLASS: Final[str] = 'hazus_r'  # Hazus road class
     HAZUS_BRIDGE_CLASS: Final[str] = 'hazus_b'
     PGD: Final[str] = 'PGD'  # Peak ground displacement
+    PGA: Final[str] = 'PGA'  # Peak ground acceleration
     SA03SEC: Final[str] = '0.3 SA'
     SA1SEC: Final[str] = '1.0 SA'
     BRIDGE_SHAPE: Final[str] = 'i_shape'
@@ -137,12 +138,13 @@ class RoadRepairDistributions:
     First Part of Table 7-3 from https://www.fema.gov/media-library-data/20130726-1913-25045-4394/hazus_eq_model_technical_manual_2_1.pdf
     Distribution type is normal
     """
+
     DISTRIBUTIONS: Dict[str, Tuple[float, float]] = {
-        0: (0, 0),
-        1: (5, 0.05),
-        2: (20, 0.1),
-        3: (40, 2),
-        4: (80, 5),
+        0: (0.0, 0.0),
+        1: (0.9, 0.05),
+        2: (2.2, 1.8),
+        3: (21, 2),
+        4: (21, 5),
     }
     def get_distribution(self, damage_state: str) -> Tuple[float, float]:
         """
@@ -194,8 +196,9 @@ class BridgeRepairDistributions:
         0: (0, 0),
         1: (0.6, 0.6),
         2: (2.5, 2.7),
-        3: (75, 42),
-        4: (230, 110),
+        3: (75, 20),
+        4: (230, 30),
+        ## modified dispersion as they were too high and resulted in weird repair times
     }
     def get_distribution(self, damage_state: str) -> Tuple[float, float]:
         """

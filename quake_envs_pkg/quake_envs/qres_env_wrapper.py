@@ -51,6 +51,7 @@ class Qres_env_wrapper(gym.Env):
 
     def __init__(self,
         verbose: bool=False,
+        single_agent: bool=False,
         time_step_duration: int = 30,
         trucks_per_building_per_day: float = 0.1,
         n_agents: int = 30,
@@ -58,8 +59,11 @@ class Qres_env_wrapper(gym.Env):
         time_horizon: int = 20,
         w_econ: float = 0.2,
         w_crit: float = 0.4,
-        w_health: float = 0.4
+        w_health: float = 0.4,
+        quake_seed = None,
+        quake_choices: list = [7.5, 8.0, 8.5, 9.0],
     ):
+        self.single_agent = single_agent
         self.dtype = np.float32
         self.verbose = verbose
         self.time_step_duration = time_step_duration
@@ -74,6 +78,8 @@ class Qres_env_wrapper(gym.Env):
         self.n_damage_states = len(DamageStates)
         self.time_horizon = time_horizon
         self.baselines ={}
+        self.earthquake_choices = quake_choices
+        self.quake_seed = quake_seed
 
         self.resilience = Resilience(
             n_agents=self.n_agents,
@@ -94,8 +100,8 @@ class Qres_env_wrapper(gym.Env):
         self.__get_action_space()
 
     def reset(self, seed: int = None, options: dict = None):
-        self.earthquake_choices = [7.5, 8.0, 8.5, 9.0]
-        self.seed(seed=seed)
+
+        self.seed(seed=seed, quake_seed=self.quake_seed)
         q_community, q_econ, q_crit, q_health = self.resilience.reset(eq_magnitude=self.eq_magnitude)
         self.functionality = q_community
         self.functionality_econ = q_econ
@@ -105,8 +111,46 @@ class Qres_env_wrapper(gym.Env):
         info = {
             "state" : self._get_state(obs)
         }
-
+        self.com_resilience = 0.0
+        self.econ_resilience = 0.0
+        self.crit_resilience = 0.0
+        self.health_resilience = 0.0
         return obs, info
+
+    def get_cal_reward(self,
+        q_1: float,
+        q_2: float,
+        q_min: float,
+        q_max: float,
+    )-> float:
+        """
+        Calculate the reward as the ***cumulative avoided losses***
+        CAL = R / ( L + R )
+        where R is the resilience, L is the loss, q_max is the maximum functionality,
+        q_min is the minimum, post-quake functionality.
+
+        **Derivation**:
+
+        - R = 0.5Δt * (q1 + q2 - 2qmin)
+        - L + R = Δt * (qmax - qmin)
+        - CAL = R / (L + R) = 0.5Δt * (q1 + q2 - 2qmin) / (Δt * (qmax - qmin))
+        - CAL = 0.5 * (q1 + q2 - 2qmin) / (qmax - qmin)
+
+        - where:
+            - q1 is the pre-quake functionality, q2 is the post-quake functionality,
+            - q_min is the minimum post-quake functionality, and q_max is the maximum functionality.
+        """
+        # Calculate the reward as the cumulative avoided losses
+        cal_reward = 0.5 * (q_1 + q_2 - 2 * q_min) / (q_max - q_min)
+        if cal_reward < 0:
+            print(f"cal_reward: {cal_reward}")
+            print(f"q_1: {q_1}")
+            print(f"q_2: {q_2}")
+            print(f"q_min: {q_min}")
+            print(f"q_max: {q_max}")
+
+        return np.float32(cal_reward)
+
 
     def step(self, actions: Tuple[int]):
         info = self.resilience.step(actions=actions)
@@ -120,22 +164,22 @@ class Qres_env_wrapper(gym.Env):
         current_func_crit = info["q"]["crit"]
         current_func_health = info["q"]["health"]
 
-        res_a_community = max((self.functionality - post_quake_func), 0.0)
-        res_b_community = max((current_func - post_quake_func), 0.0)
-        res_a_econ = max((self.functionality_econ - post_quake_func_econ), 0.0)
-        res_b_econ = max((current_func_econ - post_quake_func_econ), 0.0)
-        res_a_crit = max((self.functionality_crit - post_quake_func_crit), 0.0)
-        res_b_crit = max((current_func_crit - post_quake_func_crit), 0.0)
-        res_a_health = max((self.functionality_health - post_quake_func_health), 0.0)
-        res_b_health = max((current_func_health -
-        post_quake_func_health), 0.0)
+        q_1_com = max((self.functionality - post_quake_func), post_quake_func)
+        q_2_com = max((current_func - post_quake_func), post_quake_func)
+        q_1_econ = max((self.functionality_econ - post_quake_func_econ), post_quake_func_econ)
+        q_2_econ = max((current_func_econ - post_quake_func_econ), post_quake_func_econ)
+        q_1_crit = max((self.functionality_crit - post_quake_func_crit), post_quake_func_crit)
+        q_2_crit = max((current_func_crit - post_quake_func_crit), post_quake_func_crit)
+        q_1_health = max((self.functionality_health - post_quake_func_health), post_quake_func_health)
+        q_2_health = max((current_func_health -
+        post_quake_func_health), post_quake_func_health)
 
-        reward_econ = np.float32(0.5 * self.time_step_duration * (res_a_econ + res_b_econ))
-        reward_crit = np.float32(0.5* self.time_step_duration * (res_a_crit + res_b_crit))
-        reward_heath = np.float32(0.5 * self.time_step_duration * (res_a_health + res_b_health))
 
-        ## instantaneous resilience increase
-        reward = np.float32(0.5 * self.time_step_duration *(res_a_community + res_b_community))
+        reward_econ = np.float32(0.5 * self.time_step_duration * (q_1_econ + q_2_econ))
+        reward_crit = np.float32(0.5* self.time_step_duration * (q_1_crit + q_2_crit))
+        reward_health = np.float32(0.5 * self.time_step_duration * (q_1_health + q_2_health))
+        reward = np.float32(0.5 * self.time_step_duration * (q_1_com + q_2_com))
+
         # print(f"Reward: {reward}")
         # print(f"res_a_community: {res_a_community}")
         # print(f"res_b_community: {res_b_community}")
@@ -154,7 +198,7 @@ class Qres_env_wrapper(gym.Env):
             "total": reward,
             "econ": reward_econ,
             "crit": reward_crit,
-            "health": reward_heath
+            "health": reward_health
         }
         return obs, reward, terminated, trunc_horizon, info
 

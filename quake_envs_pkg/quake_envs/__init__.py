@@ -18,7 +18,7 @@ from .simulations.interdependencies import *
 from .simulations.traffic_assignment import *
 
 
-## example game environment ( 2 agents / grid world / agents get reward when reaching individual goal square)
+## example game environment ( 2 agents / grid world / agents get reward when reaching individual goal square), use to test multi-agent RL algorithms
 register(
   id="ma-grid-world-v0",
   entry_point="quake_envs.ma_grid_world:SimpleGridWorld",
@@ -33,14 +33,15 @@ register(
     entry_point="quake_envs.qres_env_wrapper:Qres_env_wrapper",
     kwargs={
         "verbose": False,
-        "time_step_duration": 30,
+        "time_step_duration": 150,
         "trucks_per_building_per_day": 0.1,
         "n_agents": 30,
-        "n_crews": 25,
+        "n_crews": 10,
         "time_horizon": 20,
-        "w_econ": 0.2,
-        "w_crit": 0.4,
-        "w_health": 0.4
+        "w_econ": 0.5,
+        "w_crit": 0.25,
+        "w_health": 0.25,
+        "quake_choices": [7.5, 8.0, 8.5]
     }
 )
 
@@ -50,26 +51,15 @@ register(
     entry_point="quake_envs.qres_env_wrapper:Qres_env_wrapper",
     kwargs={
         "verbose": False,
-        "time_step_duration": 20,
+        "time_step_duration": 40,
         "trucks_per_building_per_day": 0.1,
         "n_agents": 4,
-        "n_crews": 4,
-        "time_horizon": 20,
+        "n_crews": 2,
+        "time_horizon": 50,
         "w_econ": 0.2,
         "w_crit": 0.4,
-        "w_health": 0.4
+        "w_health": 0.4,
+        "quake_choices": [7.5, 8.0, 8.5]
     }
 )
 
-
-
-# import gymnasium as gym
-# env = gym.make("quake-res-30-v1")
-# actions_buildings = np.random.randint(0, 4, 15)  # Assuming 4 possible actions per building
-# actions_roads = np.random.randint(0, 3, 15)  # Assuming 3 possible actions per road
-
-
-# actions = (actions_buildings, actions_roads)
-# env.reset(seed=random.choice([0,1,2,3]))
-# observation, reward, done, info = env.step(actions)
-# done = False

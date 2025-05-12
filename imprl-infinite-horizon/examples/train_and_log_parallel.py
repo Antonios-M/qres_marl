@@ -19,7 +19,7 @@ ENV_SETTING = "qres-marl-4"
 ENV_KWARGS = {"percept_type": "state"}
 
 run_qres = "y"
-ALGORITHM = "VDN_PS"
+ALGORITHM = "DCMAC"
 SINGLE_AGENT = False
 
 

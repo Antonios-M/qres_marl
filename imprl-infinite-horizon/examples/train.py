@@ -11,14 +11,14 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Running on: {device}")
 
 run_qres = "y"
-ALGORITHM = "QMIX_PS"
+ALGORITHM = "DCMAC"
 SINGLE_AGENT = False
 
 
 
 if run_qres == "y":
     # Environment
-    env = gym.make("quake-res-4-v1").unwrapped
+    env = gym.make("quake-res-30-v1").unwrapped
     # env = gym.make("ma-grid-world-v0").unwrapped
 
 else:
