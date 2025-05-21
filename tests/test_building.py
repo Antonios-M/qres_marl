@@ -8,7 +8,7 @@ import seaborn as sns
 # Initialize the building environment
 building = Building(
   id="test_building",
-  damage_state_probs=np.array([0.0, 0.0, 0.0, 1.0, 0.0]),
+  damage_state_probs=np.array([0.0, 1.0, 0.0, 0.0, 0.0]),
   occtype="RES3A",
   str_type="PC2H",
   num_stories=2,

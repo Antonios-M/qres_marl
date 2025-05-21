@@ -137,8 +137,8 @@ class PathUtils:
 
     # Building files / Roads files
     buildings_nsi_anaheim_shp = building_geo_data_folder / "nsi_anaheim.shp"
-    buildings_study_anaheim = building_geo_data_folder / "anaheim_buildings.shp"
-    roads_anaheim_shp =  roads_geodata_folder / "anaheim_roads.shp"
+    buildings_study_anaheim = Path(r"c:\Users\Anton\OneDrive\Desktop\tudelft_thesis\City_Res_RL\src\simulations\buildings_geo_data\anaheim_buildings.shp")
+    roads_anaheim_shp = Path(r"c:\Users\Anton\OneDrive\Desktop\tudelft_thesis\City_Res_RL\src\simulations\roads_geo_data\anaheim_roads.shp")
     buildings_toy_shp = building_geo_data_folder / "toy_city_buildings.shp"
     buildings_toy_shp_2 = building_geo_data_folder / "toy_city_buildings_v_2.shp"
     buildings_toy_shp_3 = building_geo_data_folder / "toy_city_buildings_v_3.geojson"
@@ -154,10 +154,10 @@ class PathUtils:
     # Traffic network files
     traffic__anaheim_tntp = traffic_input_networks_folder / "Anaheim_net.tntp"
     traffic_anaheim_demand_tntp = traffic_input_networks_folder / "Anaheim_trips.tntp"
-    traffic_anaheim_net_csv = traffic_processed_networks_folder / "Anaheim_net.csv"
-    traffic_anaheim_demand_csv = traffic_processed_networks_folder / "Anaheim_trips.csv"
+    traffic_anaheim_net_csv = Path(r"C:\Users\Anton\OneDrive\Desktop\tudelft_thesis\City_Res_RL\src\simulations\traffic_processed_networks\Anaheim_net.csv")
+    traffic_anaheim_demand_csv = Path(r"C:\Users\Anton\OneDrive\Desktop\tudelft_thesis\City_Res_RL\src\simulations\traffic_processed_networks\Anaheim_trips.csv")
     traffic_nodes_geojson_file = traffic_geo_neworks_folder / "anaheim_nodes.geojson"
-    traffic_links_geojson_file = traffic_geo_neworks_folder / "anaheim.geojson"
+    traffic_links_geojson_file = Path(r"C:\Users\Anton\OneDrive\Desktop\tudelft_thesis\City_Res_RL\src\simulations\traffic_geo_networks\anaheim.geojson")
 
     traffic_toy_city_geojson = traffic_geo_neworks_folder / "toy_city_traffic.geojson"
     traffic_toy_city_geojson_2 = traffic_geo_neworks_folder / "toy_city_traffic_v_2.geojson"
@@ -194,6 +194,13 @@ class PathUtils:
                 "traffic_links": traffic_toy_city_geojson_4,
                 "traffic_net": traffic_toy_city_network_4,
                 "traffic_dem": traffic_toy_city_demand_4
+        },
+        "6000": {
+                "buildings": buildings_study_anaheim,
+                "roads": roads_anaheim_shp,
+                "traffic_links": traffic_links_geojson_file,
+                "traffic_net": traffic_anaheim_net_csv,
+                "traffic_dem": traffic_anaheim_demand_csv
         }
     }
 

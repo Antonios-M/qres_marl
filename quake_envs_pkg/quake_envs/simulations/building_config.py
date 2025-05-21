@@ -74,7 +74,6 @@ class INCOREBuildingSchema: ## Chosen schema: ergo:buildingInventoryVer4
     EFACILITY: Final[str] = 'efacility'
     DWELL_UNIT: Final[str] = 'dwell_unit'
     SQ_FOOT: Final[str] = 'sq_foot'
-    CAPACITY_REDUCTION: Final[str] = 'capacity_red'
     GUID: Final[str] = 'guid'
 
 @dataclass (frozen=True)
@@ -85,6 +84,7 @@ class StudyBuildingSchema(INCOREBuildingSchema):
     PLS2: Final[str] = 'pls2'
     PLS3: Final[str] = 'pls3'
     PLS4: Final[str] = 'pls4'
+    CAPACITY_REDUCTION: Final[str] = 'capacity_red'
     DAMAGE_STATE: Final[str] = 'damage_state'
     INIT_REPAIR_TIME: Final[str] = 'init_repair_time'
     CURR_REPAIR_TIME: Final[str] = 'curr_repair_time'
@@ -462,18 +462,14 @@ class BuildingDowntimeDelays:
 
 class BuildingRecoveryData:
     """
-    Table 11-7 and 11-8 and 11-9 from (HAZUS, 2024)
-    distribution is assumed to be normal with standard deviation = 0.25 * mean
-
-    Structure: {
-        occtype: {
-            np.array(Tds1, Tds2, Tds3, Tds4, Tds5)
-        }
-    }
+    various recovery times for different building types and damage states
+    - References:
+        1) HAZUS earthquake model technical manual 2024.
+        2) HAZUS earthquake model inventory technical manual 2024
     """
 
     REPAIR_TIMES = {
-        ## Tables 11-7
+        ## Tables 11-7 (1)
         "RES1": np.array([0, 2, 30, 90, 180]),
         "RES2": np.array([0, 2, 10, 30, 60]),
         "RES3": np.array([0, 5, 30, 120, 240]),
@@ -505,7 +501,7 @@ class BuildingRecoveryData:
     }
 
     RECOVERY_TIMES = {
-        ## Tables 11-8
+        ## Tables 11-8 (1)
         "RES1": np.array([0, 5, 120, 360, 720]),
         "RES2": np.array([0, 5, 20, 120, 240]),
         "RES3": np.array([0, 10, 120, 480, 960]),
@@ -537,7 +533,7 @@ class BuildingRecoveryData:
     }
 
     SERVICE_INTERRUPTION_MULTIPLIERS = {
-        # Table 11-9
+        # Table 11-9 (1)
         "RES1": np.array([0, 0, 0.5, 1.0, 1.0]),
         "RES2": np.array([0, 0, 0.5, 1.0, 1.0]),
         "RES3": np.array([0, 0, 0.5, 1.0, 1.0]),
@@ -569,6 +565,7 @@ class BuildingRecoveryData:
     }
 
     INCOME_RECAPTURE_FACTORS = {
+        # Table 6-17 (2)
         "RES1": np.array([0, 0, 0, 0]),
         "RES2": np.array([0, 0, 0, 0]),
         "RES3": np.array([0, 0, 0, 0]),
@@ -600,6 +597,7 @@ class BuildingRecoveryData:
     }
 
     PROPRIETORS_INCOME = {
+        ## Table 6-16 (2)
         ## Income per sqft per day,
         # wages per sqft per day,
         # employees per sqft,
@@ -639,7 +637,9 @@ class BuildingRecoveryData:
         "EDU2": np.array([0.441, 1.039, 0.010, 6.806])
     }
 
-    NON_STRUCT_REP_COSTS_DRIFT_SENS = { ## Table 11-4, unit: % of building replacement cost
+    NON_STRUCT_REP_COSTS_DRIFT_SENS = {
+        ## Table 11-4 (1)
+        # unit: % of building replacement cost
         'RES1': np.array([1.0, 5.0, 25.0, 50.0]),
         'RES2': np.array([0.8, 3.8, 18.9, 37.8]),
         'RES3A': np.array([0.9, 4.3, 21.3, 42.5]),
@@ -707,7 +707,7 @@ class BuildingRecoveryData:
 
     DISRUPTION_COSTS = {
         # """
-        # Table 6-13 from hazus inventory technical manual
+        # Table 6-13 (2)
         # Columns:
         # - Rental Cost ( $ / sqft / month)
         # - Rental Cost ($ / sqft / day)
@@ -864,7 +864,7 @@ class BuildingRecoveryData:
         probability of structural damage states, and expected recovery time.
 
         Parameters:
-        occupancy_class (str): The occupancy class identifier (e.g., 'COM1', 'EDU2').
+        occupancy_class (str): hazus occupancy class (e.g., "RES1", "COM6").
         floor_area (float): The floor area of the building in square feet.
         structural_damage_probs (np.array): Probability distribution of the building being in each structural damage state.
         recovery_times (np.array): Expected recovery times (in days) for each structural damage state.
@@ -891,13 +891,13 @@ class BuildingRecoveryData:
         if occupancy_type[:4] == "RES1":
             OO =  self.PRCNT_OWNER_OCCUPIED["RES1"]
             DC = self.DISRUPTION_COSTS["RES1"][2]
-            RENT = self.DISRUPTION_COSTS["RES1"][0] ## value in  $ / sqft / month
+            RENT = self.DISRUPTION_COSTS["RES1"][1] ## value in  $ / sqft / day
         elif occupancy_type not in self.PROPRIETORS_INCOME:
             raise KeyError(f"{occupancy_type} not found in DISTRIBUTIONS")
         else:
             OO = self.PRCNT_OWNER_OCCUPIED[occupancy_type]
             DC = self.DISRUPTION_COSTS[occupancy_type][2]
-            RENT = self.DISRUPTION_COSTS[occupancy_type][0] ## value in $ / sqft / month
+            RENT = self.DISRUPTION_COSTS[occupancy_type][1] ## value in $ / sqft / day
 
         RT = self.get_recovery_time(occupancy_type=occupancy_type)
         # print(f"area: {area}")
@@ -909,6 +909,12 @@ class BuildingRecoveryData:
         REL = area * math.ceil(
             (1 - OO) * np.sum(ds_probs * DC) + OO * np.sum(ds_probs * (DC + RENT + RT))
         )
+        # [DEBUG]
+        ## check values are in same time units (e.g days or months)
+        # print(f"--------------------------------")
+        # print(f"Disruption costs: {DC}, Rental costs: {RENT}, Recovery time: {RT}, ds_probs: {ds_probs}")
+        # print(f"Owner occupied: {OO}, Area: {area}")
+        # print(f"Relocation costs: {REL:,}, for occupancy type: {occupancy_type}")
 
         return REL
 
@@ -916,7 +922,9 @@ class BuildingRecoveryData:
         sqft: float,
         occtype: str
     ):
-        """Compute number of hospital beds based on ``HAZUS_INVENTORY_TECH_MANUAL`` Table 7-3"""
+        """
+        Table 7-3 (1)
+        """
         if sqft >= 300000:
             return 200
         elif sqft <= 100000:
@@ -932,7 +940,7 @@ class BuildingRecoveryData:
 
 class BuildingReplacementCosts:
     """
-    Table 6-2 and 6-3 from HAAZUS Inventory Technical Manual
+    Table 6-2 and 6-3 from (1)
     """
     OCCUPANCIES: Dict[Tuple[str, int], List[float]] = {
         # (Occupancy Type, Number of Stories): [Building Replacement Cost per sqft, Vehicle Replacement Cost]

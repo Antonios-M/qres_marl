@@ -18,7 +18,7 @@ SINGLE_AGENT = False
 
 if run_qres == "y":
     # Environment
-    env = gym.make("quake-res-30-v1").unwrapped
+    env = gym.make("quake-res-4-v1").unwrapped
     # env = gym.make("ma-grid-world-v0").unwrapped
 
 else:

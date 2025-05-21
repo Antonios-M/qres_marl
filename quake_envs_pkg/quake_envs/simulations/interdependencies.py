@@ -362,7 +362,7 @@ def update_capacities(
         focus_buildings_gdf = gpd.GeoDataFrame(geometry=focus_buildings.geometry, crs=study_buildings_gdf.crs)
         # focus_buildings.loc[:, StudyBuildingSchema.DEBRIS_GEOM] = focus_buildings[StudyBuildingSchema.DEBRIS_GEOM].apply(wkt.loads)
         # Filter focus_buildings to include only 'Extensive' or 'Complete' damage states
-        focus_buildings = focus_buildings[focus_buildings[StudyBuildingSchema.DAMAGE_STATE].isin(['Extensive', 'Complete'])]
+        # focus_buildings = focus_buildings[focus_buildings[StudyBuildingSchema.DAMAGE_STATE].isin(['Extensive', 'Complete'])]
         focus_buildings.loc[:, StudyBuildingSchema.DEBRIS_GEOM] = focus_buildings[StudyBuildingSchema.DEBRIS_GEOM].apply(
             lambda x: wkt.loads(x) if isinstance(x, str) else x if isinstance(x, Polygon) else None
         )
@@ -524,6 +524,9 @@ def map_capacity_reduction_debris(
     for road in roads:
         accessing_buildings = [building for building in buildings if building.access_road_id == road.id]
         debris_capacity_reductions = [building.debris_capacity_reduction for building in accessing_buildings]
+        # print(f"Road ID: {road.id}, Debris Capacity Reductions: {debris_capacity_reductions}")
+        # print(f"Building Capacity Reductions: {[building.debris_capacity_reduction for building in accessing_buildings]}")
+        # print(f"Building has Debris: {[building.has_debris for building in accessing_buildings]}")
         road.capacity_red_debris = max(debris_capacity_reductions, default=0.0)
         road.capacity_reduction = max(road.capacity_red_damage_state, road.capacity_red_debris)
 

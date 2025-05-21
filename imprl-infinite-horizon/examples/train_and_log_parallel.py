@@ -11,9 +11,10 @@ import imprl.envs
 from imprl.runners.serial import training_rollout, evaluate_agent
 from imprl.agents.configs.get_config import load_config
 import gymnasium as gym
+import os
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-ENV_NAME = "quake-res-4-v1"
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+ENV_NAME = "quake-res-30-v1"
 # ENV_NAME = "ma-grid-world-v0"
 ENV_SETTING = "qres-marl-4"
 ENV_KWARGS = {"percept_type": "state"}
@@ -45,7 +46,7 @@ agent_class = imprl.agents.get_agent_class(ALGORITHM)
 LearningAgent = agent_class(env, alg_config, device)  # initialize agent
 print(f"Loaded default configuration for {ALGORITHM}.")
 
-PROJECT = "VDN_PS_refactored_imprl"
+PROJECT = "final-DCMAC-toy-city-30"
 ENTITY = "antoniosmavrotas-tu-delft"
 # WANDB_DIR = "./experiments/data"
 # WANDB_DIR = "/scratch/pbhustali"
@@ -60,7 +61,8 @@ def parallel_rollout(args):
     checkpt_dir, ep = args
     agent = agent_class(inference_env, alg_config, device)
     agent.load_weights(checkpt_dir, ep)
-    return evaluate_agent(inference_env, agent)
+    returns, cal = evaluate_agent(inference_env, agent)
+    return returns, cal
 
 
 if __name__ == "__main__":
@@ -117,21 +119,28 @@ if __name__ == "__main__":
             # parallel evaluation
             args_list = [(checkpt_dir, ep) for _ in range(NUM_INFERENCE_EPISODES)]
 
-            with concurrent.futures.ProcessPoolExecutor() as executor:
+            # MAX_WORKERS = 2
+
+            list_func_evaluations = []
+            with concurrent.futures.ProcessPoolExecutor(max_workers=2) as executor:
                 # Submit all the tasks and gather the futures
                 futures = [
                     executor.submit(parallel_rollout, args) for args in args_list
                 ]
                 # Wait for all futures to complete and extract the results
-                list_func_evaluations = [
-                    future.result()
-                    for future in concurrent.futures.as_completed(futures)
-                ]
+                list_func_evaluations = []
+                list_cal = []
+
+                for future in concurrent.futures.as_completed(futures):
+                    result = future.result()
+                    list_func_evaluations.append(result[0])
+                    list_cal.append(result[1])
 
                 # Combine the results
                 eval_costs = np.hstack(list_func_evaluations)
                 # print(f"Evaluated {len(eval_costs)} episodes in parallel. Total Rewards: {eval_costs}")
 
+            _mean_cal = np.mean(list_cal)
             _mean = np.mean(eval_costs)
             _stderr = np.std(eval_costs) / np.sqrt(len(eval_costs))
 
@@ -146,6 +155,7 @@ if __name__ == "__main__":
                     "inference_stderr": _stderr,
                     "best_reward": best_reward,
                     "best_checkpt": best_checkpt,
+                    "inference_mean_cal": _mean_cal
                 }
             )
 

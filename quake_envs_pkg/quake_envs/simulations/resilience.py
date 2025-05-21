@@ -56,7 +56,7 @@ class Resilience:
         min_bldg_rt, max_bldg_rt = get_building_obs_bounds()
         self._max_obs = max(max_road_rt, max_bldg_rt)
 
-        self.earthquake_choices = [7.5, 8.0, 8.5, 9.0]
+        # self.earthquake_choices = [7.5, 8.0, 8.5, 9.0]
         self.info = {}
 
     def __init_simulation(self) -> InterdependentNetworkSimulation:
@@ -108,7 +108,6 @@ class Resilience:
             roads_study_gdf=self.roads_gdf,
             recalculate=True
         )
-
         self.buildings_objs = make_building_objects(
             buildings_study_gdf=self.buildings_gdf,
             time_step_duration=self.time_step_duration,
@@ -116,6 +115,7 @@ class Resilience:
         )
 
         self.road_objs = make_road_objects(
+            buildings=self.buildings_objs,
             roads_study_gdf=self.roads_gdf,
             time_step_duration=self.time_step_duration,
             traffic_net_df=self.simulation.curr_traffic_net_df
@@ -152,29 +152,45 @@ class Resilience:
         rcs = []
         incs = []
         relocs = []
+        actions = []
         for info in self.info_buildings:
             rts.append(info["repair_time"])
             dss.append(info["damage_state"])
             rcs.append(info["repair_cost"])
             incs.append(info["income"])
             relocs.append(info["relocation_cost"])
-        return (rts, dss, rcs, incs, relocs)
+            actions.append(info["action"])
+        return (rts, dss, rcs, incs, relocs, actions)
 
     def get_road_info(self):
         rts = []
         dss = []
         rcs = []
         crds = []
+        actions = []
         for info in self.info_roads:
             rts.append(info["repair_time"])
             dss.append(info["damage_state"])
             rcs.append(info["repair_cost"])
             crds.append(info["capacity_reduction"])
+            actions.append(info["action"])
 
-        return (rts, dss, rcs, crds)
+        return (rts, dss, rcs, crds, actions)
 
 
     def get_info(self):
+        # print("--------")
+        # print("building repair: " + str([b.current_structural_repair_cost for b in self.buildings_objs]))
+        ## building repair times
+        # print([b.current_repair_time for b in self.buildings_objs])
+        # ## road repair times
+        # print([r.current_repair_time for r in self.road_objs])
+        # # road repair costs
+        # print([r.current_repair_cost for r in self.road_objs])
+        # # traffic delay cost
+        # print(self.__get_traffic_delay_cost())
+        # # relocation cost
+        # print("relocation: " + str([b.get_relocation_cost() for b in self.buildings_objs]))
         info = {
             "income": sum([b.current_income for b in self.buildings_objs]),
             "costs": {
@@ -208,7 +224,7 @@ class Resilience:
             delay[i] = dt
 
         adjusted_delay = np.max(delay) /  self.time_step_duration
-        return adjusted_delay
+        return int(np.ceil(adjusted_delay))
 
     def reset(
         self,
@@ -227,14 +243,69 @@ class Resilience:
         # print(f"Log: Initial road damage states: {[r.current_damage_state for r in self.road_objs]}")
         self.current_mtt = self.__get_mean_travel_time()
         # self.__assign_random_normalized_ranks()
-
         self.initial_income = sum([b.max_income for b in self.buildings_objs])
+
         self.initial_critical_func = sum([b.initial_critical_func for b in self.buildings_objs])
         self.initial_beds = sum([b.initial_beds for b in self.buildings_objs])
         self.initial_doctors = sum([b.initial_doctors for b in self.buildings_objs])
         self.delay_time = self.compute_down_time_delays()
 
-        return self.q_community_decomp
+
+        self.info_buildings = [{} for _ in self.buildings_objs]
+        self.info_roads = [{} for _ in self.road_objs]
+        self.reset_info_components()
+
+
+        q_community, q_econ, q_crit, q_health = self.q_community_decomp
+        self.post_quake_func = q_community
+        self.post_quake_econ_func = q_econ
+        self.post_quake_crit_func = q_crit
+        self.post_quake_health_func = q_health
+
+        bldg_repairs_completed = [False for d in self.info_buildings]
+        road_repairs_completed = [False for d in self.info_roads]
+        bldg_debris_cleared = [False for d in self.info_buildings]
+        bldg_funcs_restored = [False for d in self.info_buildings]
+        q_econ_components = self.q_econ[1]
+
+        return {
+            "q": {
+                "community_robustness": self.post_quake_func,
+                "community_robustness_econ": self.post_quake_econ_func,
+                "community_robustness_crit": self.post_quake_crit_func,
+                "community_robustness_health": self.post_quake_health_func,
+                "community": q_community,
+                "econ": q_econ,
+                "crit": q_crit,
+                "health": q_health
+            },
+            "q_econ_components": q_econ_components,
+            "completions": {
+                "bldg_repairs": bldg_repairs_completed,
+                "road_repairs": road_repairs_completed,
+                "bldg_debris": bldg_debris_cleared,
+                "bldg_funcs": bldg_funcs_restored
+            }
+        }
+
+    def reset_info_components(self):
+        for i, b in enumerate(self.buildings_objs):
+            self.info_buildings[i] = {
+                "repair_time": b.current_repair_time,
+                "damage_state": b.current_damage_state,
+                "repair_cost": b.current_structural_repair_cost,
+                "income": b.current_income,
+                "relocation_cost": b.get_relocation_cost(),
+                "action": None
+            }
+        for i, r in enumerate(self.road_objs):
+            self.info_roads[i] = {
+                "repair_time": r.current_repair_time,
+                "damage_state": r.current_damage_state,
+                "repair_cost": r.current_repair_cost,
+                "capacity_reduction": r.capacity_reduction,
+                "action": None ## TODO: check this
+            }
 
     def _save_env_config(self, folder_path: str):
         bldg = self.buildings_objs[0]
@@ -296,6 +367,7 @@ class Resilience:
     ) -> None:
         original_actions = np.array(actions)
         actions = self.__prioritise_actions(original_actions)
+        actions = self.__mask_invalid_actions(actions)
         # print(f"Stepping actions: {actions}")
 
         # Check if actions changed during prioritization (agents chose too many repair actions for n_crews available)
@@ -307,12 +379,12 @@ class Resilience:
 
         self.info_buildings = [{} for _ in self.buildings_objs]
         self.info_roads = [{} for _ in self.road_objs]
-
         for agent, action in enumerate(list(actions)):
             if agent < self.num_buildings:
                 building = self.buildings_objs[agent]
                 building_info = building.step(BuildingAction(action))
                 self.info_buildings[agent] = building_info
+                self.info_buildings[agent]["action"] = action
             else:
                 road = self.road_objs[agent - self.num_buildings]
                 dependant_buildings = [
@@ -320,6 +392,7 @@ class Resilience:
                 ]
                 road_info = road.step(RoadAction(action), dependant_buildings=dependant_buildings)
                 self.info_roads[agent - self.num_buildings] = road_info
+                self.info_roads[agent - self.num_buildings]["action"] = action
 
         self.buildings_objs, self.road_objs = map_capacity_reduction_debris(
             buildings=self.buildings_objs,
@@ -341,15 +414,10 @@ class Resilience:
         bldg_debris_cleared = [False if clear is None else clear for clear in bldg_debris_cleared]
 
         bldg_funcs_restored = [d["functionality_has_restored"] for d in self.info_buildings]
+
         bldg_funcs_restored = [False if clear is None else clear for clear in bldg_funcs_restored]
 
         q_econ_components = self.q_econ[1]
-        if self.time == 1:
-            self.post_quake_func = q_community
-            self.post_quake_econ_func = q_econ
-            self.post_quake_crit_func = q_crit
-            self.post_quake_health_func = q_health
-
         return {
             "q": {
                 "community_robustness": self.post_quake_func,
@@ -413,6 +481,8 @@ class Resilience:
     def q_crit(self) -> float:
         """Calculate the critical functionality"""
         info = self.get_info()
+        # print(f"critical func at time {self.time}: {info['functionalities']['critical_functionality']}")
+        # print(f"initial critical func: {self.initial_critical_func}")
         return info["functionalities"]["critical_functionality"] / self.initial_critical_func
 
     @property
@@ -460,6 +530,18 @@ class Resilience:
 
         for i, obj in enumerate(all_objects):
             obj.value = i / (total_items - 1) if total_items > 1 else 0.0
+
+    def __mask_invalid_actions(self, actions: np.ndarray) -> np.ndarray:
+        """
+        Masks invalid actions (e.g., repairing a fully repaired building) to 0.
+        """
+        for i, building in enumerate(self.buildings_objs):
+            if building.is_fully_repaired:
+                actions[i] = 0
+        for i, road in enumerate(self.road_objs):
+            if road.is_fully_repaired:
+                actions[i + self.num_buildings] = 0
+        return actions
 
     def __prioritise_actions(
         self,

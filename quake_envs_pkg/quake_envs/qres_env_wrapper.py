@@ -62,7 +62,9 @@ class Qres_env_wrapper(gym.Env):
         w_health: float = 0.4,
         quake_seed = None,
         quake_choices: list = [7.5, 8.0, 8.5, 9.0],
+        reward_type: str = "loss"
     ):
+        self.reward_type = reward_type
         self.single_agent = single_agent
         self.dtype = np.float32
         self.verbose = verbose
@@ -102,26 +104,49 @@ class Qres_env_wrapper(gym.Env):
     def reset(self, seed: int = None, options: dict = None):
 
         self.seed(seed=seed, quake_seed=self.quake_seed)
-        q_community, q_econ, q_crit, q_health = self.resilience.reset(eq_magnitude=self.eq_magnitude)
-        self.functionality = q_community
-        self.functionality_econ = q_econ
-        self.functionality_crit = q_crit
-        self.functionality_health = q_health
+        info = self.resilience.reset(eq_magnitude=self.eq_magnitude)
+        self.functionality = info["q"]["community_robustness"]
+        self.functionality_econ = info["q"]["community_robustness_econ"]
+        self.functionality_crit = info["q"]["community_robustness_crit"]
+        self.functionality_health = info["q"]["community_robustness_health"]
+        self.pq_functionality = self.functionality
+        self.pq_functionality_econ = self.functionality_econ
+        self.pq_functionality_crit = self.functionality_crit
+        self.pq_functionality_health = self.functionality_health
+
+        self.post_quake_funcs = np.array([
+            self.pq_functionality,
+            self.pq_functionality_econ,
+            self.pq_functionality_crit,
+            self.pq_functionality_health
+        ])
         obs = self.resilience.state(dtype=self.dtype)
-        info = {
-            "state" : self._get_state(obs)
+        info["state"] = self._get_state(obs)
+        q_deltas = self.__get_runtime_reward_metrics(info)
+        reward = - self.get_cal_reward(0, q_deltas, return_loss=True)
+
+        info["reward"] = {
+            "total": - self.get_cal_reward(0, q_deltas, return_loss=True),
+            "econ": - self.get_cal_reward(1, q_deltas, return_loss=True),
+            "crit": - self.get_cal_reward(2, q_deltas, return_loss=True),
+            "health": - self.get_cal_reward(3, q_deltas, return_loss=True),
+            "resilience": 0.0,
+            "loss": 1.0
         }
+
         self.com_resilience = 0.0
         self.econ_resilience = 0.0
         self.crit_resilience = 0.0
         self.health_resilience = 0.0
         return obs, info
 
+    def get_loss_reward(self):
+        return
+
     def get_cal_reward(self,
-        q_1: float,
-        q_2: float,
-        q_min: float,
-        q_max: float,
+        q_idx: int, ## 0: community, 1: econ, 2: crit, 3: health
+        q_deltas: np.array,
+        return_loss=False
     )-> float:
         """
         Calculate the reward as the ***cumulative avoided losses***
@@ -130,7 +155,6 @@ class Qres_env_wrapper(gym.Env):
         q_min is the minimum, post-quake functionality.
 
         **Derivation**:
-
         - R = 0.5Δt * (q1 + q2 - 2qmin)
         - L + R = Δt * (qmax - qmin)
         - CAL = R / (L + R) = 0.5Δt * (q1 + q2 - 2qmin) / (Δt * (qmax - qmin))
@@ -141,65 +165,150 @@ class Qres_env_wrapper(gym.Env):
             - q_min is the minimum post-quake functionality, and q_max is the maximum functionality.
         """
         # Calculate the reward as the cumulative avoided losses
-        cal_reward = 0.5 * (q_1 + q_2 - 2 * q_min) / (q_max - q_min)
+        pq_funcs = self.post_quake_funcs
+        temp_funcs = q_deltas
+        pq_quake_func = np.round(pq_funcs[q_idx], 5)
+        temp_funcs_1 = np.round(temp_funcs[q_idx][0], 5)
+        temp_funcs_2 = np.round(temp_funcs[q_idx][1], 5)
+        RL = np.round(self.time_step_duration * (1 - pq_quake_func), 5)
+        R = np.round(0.5 * self.time_step_duration * (temp_funcs_2 + temp_funcs_1), 5)
+        cal_reward = (RL -  R) / RL
+        self.RL = RL
+        self.R = R
+
+        # if q_idx == 3:
+        #     print(cal_reward)
         if cal_reward < 0:
+            print(f"[DEBUG]------------------")
             print(f"cal_reward: {cal_reward}")
-            print(f"q_1: {q_1}")
-            print(f"q_2: {q_2}")
-            print(f"q_min: {q_min}")
-            print(f"q_max: {q_max}")
+            print(f"q_1: {temp_funcs[q_idx][0]}")
+            print(f"q_2: {temp_funcs[q_idx][1]}")
+            print(f"q_min: {pq_funcs[q_idx]}")
+            print(f"q_max: {1.0}")
+            raise ValueError("Cumulative Avoided Losses can't be negative")
 
-        return np.float32(cal_reward)
 
+        return cal_reward
+
+    def get_termination_reward(self,
+        q_td: float,
+        t_term: int
+    ) -> float:
+        """
+        R(sbar) = [1 - Q(td)] * [th-TR]
+        """
+        return np.float32((1 - q_td) * (self.time_horizon - t_term))
+
+    def get_state_reward(self,
+        q_t: float,
+        q_t_prev: float,
+        q_min: float,
+        q_max:float=1.0
+    ) -> float:
+        res_t = 0.5 * self.time_step_duration * (q_t + q_t_prev)
+        max_res_t = self.time_step_duration * (q_max - q_min)
+        loss_t = max_res_t - res_t
+
+        return np.float32(-loss_t)
+
+    def __get_runtime_reward_metrics(self, info):
+        """
+        - q_1 = q(t-1)
+        - q_2 = q(t)
+        where q(t) is the functionality at time t and measured with 0 being the post-earthquake functionality.
+        """
+        pq_funcs = self.post_quake_funcs
+
+        ## community
+        q_1_com = max((self.functionality - pq_funcs[0]), 0.0) ## prev
+        q_2_com = max((info["q"]["community"] - pq_funcs[0]), 0.0) ## curr
+
+        ## economic
+        q_1_econ = max((self.functionality_econ - pq_funcs[1]), 0.0)
+        q_2_econ = max((info["q"]["econ"] - pq_funcs[1]), 0.0)
+        # print(f"q_1_econ: {q_1_econ}")
+        # print(f"q_2_econ: {q_2_econ}")
+
+        ## critical
+        q_1_crit = max((self.functionality_crit - pq_funcs[2]), 0.0)
+        q_2_crit = max((info["q"]["crit"] - pq_funcs[2]), 0.0)
+        # print(self.resilience.time)
+        # print(f"time: {self.resilience.time}")
+        # print(f"previous critical func: {self.functionality_crit}")
+        # print(f"initial critical func: {pq_funcs[2]}")
+
+        # print(f"q_1_crit: {q_1_crit}")
+        # print(f"q_2_crit: {q_2_crit}")
+
+        ## healthcare
+        q_1_health = max((self.functionality_health - pq_funcs[3]), pq_funcs[3])
+        q_2_health = max((info["q"]["health"] - pq_funcs[3]), pq_funcs[3])
+
+
+        return np.array([ ## q(t-1), q(t)
+            [q_1_com, q_2_com],
+            [q_1_econ, q_2_econ],
+            [q_1_crit, q_2_crit],
+            [q_1_health, q_2_health]
+        ])
 
     def step(self, actions: Tuple[int]):
-        info = self.resilience.step(actions=actions)
         obs = self.resilience.state(dtype=self.dtype)
-        post_quake_func = info["q"]["community_robustness"]
-        post_quake_func_econ = info["q"]["community_robustness_econ"]
-        post_quake_func_crit = info["q"]["community_robustness_crit"]
-        post_quake_func_health = info["q"]["community_robustness_health"]
-        current_func = info["q"]["community"]
-        current_func_econ = info["q"]["econ"]
-        current_func_crit = info["q"]["crit"]
-        current_func_health = info["q"]["health"]
-
-        q_1_com = max((self.functionality - post_quake_func), post_quake_func)
-        q_2_com = max((current_func - post_quake_func), post_quake_func)
-        q_1_econ = max((self.functionality_econ - post_quake_func_econ), post_quake_func_econ)
-        q_2_econ = max((current_func_econ - post_quake_func_econ), post_quake_func_econ)
-        q_1_crit = max((self.functionality_crit - post_quake_func_crit), post_quake_func_crit)
-        q_2_crit = max((current_func_crit - post_quake_func_crit), post_quake_func_crit)
-        q_1_health = max((self.functionality_health - post_quake_func_health), post_quake_func_health)
-        q_2_health = max((current_func_health -
-        post_quake_func_health), post_quake_func_health)
-
-
-        reward_econ = np.float32(0.5 * self.time_step_duration * (q_1_econ + q_2_econ))
-        reward_crit = np.float32(0.5* self.time_step_duration * (q_1_crit + q_2_crit))
-        reward_health = np.float32(0.5 * self.time_step_duration * (q_1_health + q_2_health))
-        reward = np.float32(0.5 * self.time_step_duration * (q_1_com + q_2_com))
-
-        # print(f"Reward: {reward}")
-        # print(f"res_a_community: {res_a_community}")
-        # print(f"res_b_community: {res_b_community}")
-
-        # Update state trackers
-        self.functionality = current_func
-        self.functionality_econ = current_func_econ
-        self.functionality_crit = current_func_crit
-        self.functionality_health = current_func_health
-
         terminated = self.resilience.terminated
+        info = self.resilience.step(actions=actions)
         trunc_horizon, trunc_actions = self.resilience.truncated
+        time = self.resilience.time
+        q_deltas = self.__get_runtime_reward_metrics(info)
 
+        if self.reward_type == "cal":
+            return_loss = False
+        else:
+            return_loss = True
+
+        # reward = np.float32(- (1 - info["q"]["community"]))
+        rewards_parts = np.zeros((4, 2))  # change this if you add more subs-system functionalities
+        rewards = np.zeros(4, dtype=np.float32)
+        for i in range(4):
+            cal_reward = self.get_cal_reward(i, q_deltas, return_loss=True)
+            rewards_parts[i] = [self.RL, self.R]
+            rewards[i] = np.float32(- cal_reward) ## rl is not resilience loss, it is |resilience| + |loss|
+
+        reward = rewards[0]
+        reward_econ = rewards[1]
+        reward_crit = rewards[2]
+        reward_health = rewards[3]
+
+        # if info["penalty"]:
+        #     reward = np.float32(-1.0)
+
+
+
+        # if terminated:
+        #     reward += self.get_termination_reward(post_quake_func, time)
+
+        self.functionality = info["q"]["community"]
+        self.functionality_econ = info["q"]["econ"]
+        self.functionality_crit = info["q"]["crit"]
+        self.functionality_health = info["q"]["health"]
+
+        # print(f"func: {self.functionality}")
+        # print(f"func_econ: {self.functionality_econ}")
+        # print(f"func_crit: {self.functionality_crit}")
+        # print(f"func_health: {self.functionality_health}")
+        # print("-------")
         info["state"] = self._get_state(obs)
         info["reward"] = {
             "total": reward,
             "econ": reward_econ,
             "crit": reward_crit,
-            "health": reward_health
+            "health": reward_health,
+            "resilience": rewards_parts[0][1],
+            "loss": rewards_parts[0][0] - rewards_parts[0][1]
         }
+        # print(f" terminated: {terminated}")
+        # print(f"reward: {reward}")
+        if abs(reward) < 0.001:
+            terminated = True
         return obs, reward, terminated, trunc_horizon, info
 
     def _get_state(self, obs) -> np.ndarray:

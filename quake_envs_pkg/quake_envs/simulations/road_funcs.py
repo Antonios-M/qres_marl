@@ -704,7 +704,6 @@ class Road:
         hazus_bridge_class,
         is_bridge,
         capacity_red_debris,
-        capacity_red_damage_state,
         time_step_duration,
         traffic_idx,
         verbose: bool,
@@ -731,7 +730,10 @@ class Road:
         if self.stoch_ds:
             self.initial_damage_state = damage_state
             self.current_damage_state = damage_state
-            self.capacity_red_damage_state = capacity_red_damage_state
+            if self.is_bridge:
+                self.capacity_red_damage_state = get_bridge_capacity_reduction(damage_state=damage_state)
+            else:
+                self.capacity_red_damage_state = get_road_capacity_reduction(damage_state=damage_state)
         else:
             self.initial_damage_state = 4
             self.current_damage_state = 4
@@ -739,6 +741,7 @@ class Road:
         ## ---------------------Debris---------------------
         if self.calc_debris:
             self.capacity_red_debris = capacity_red_debris
+            # print(f"Log----2)road_{self.id}: Initial debris capacity reduction: {self.capacity_red_debris}")
         else:
             self.capacity_red_debris = 0.0
 
@@ -884,8 +887,6 @@ class Road:
             self.__step_damage_state()
             return self.current_repair_cost
 
-
-
     def __step_damage_state(self):
         steps = self.initial_damage_state
         if steps <= 0:
@@ -931,6 +932,7 @@ class Road:
         )
 
 def make_road_objects(
+    buildings: List[Building],
     roads_study_gdf: gpd.GeoDataFrame,
     time_step_duration: int,
     traffic_net_df: pd.DataFrame
@@ -938,6 +940,18 @@ def make_road_objects(
     road_objs = []
     for idx, row in roads_study_gdf.iterrows():
         id = idx
+        capacity_red_debris = -1
+        for building in buildings:
+            if building.access_road_id == id:
+                if building.debris_capacity_reduction > capacity_red_debris:
+                    capacity_red_debris = building.debris_capacity_reduction
+
+        if capacity_red_debris == -1:
+            capacity_red_debris = 0.0
+
+        # print(f"Log----1)road_{id}: Initial debris capacity reduction: {capacity_red_debris}")
+
+
         _link_index = row[StudyRoadSchema.TRAFFIC_LINK_INDEX]
         if _link_index is None:
             init_node = -1
@@ -952,10 +966,8 @@ def make_road_objects(
         hazus_road_class = row[StudyRoadSchema.HAZUS_ROAD_CLASS]
         hazus_bridge_class = row[StudyRoadSchema.HAZUS_BRIDGE_CLASS]
         is_bridge = True if hazus_bridge_class != 'None' else False
-        capacity_red_ds = row[StudyRoadSchema.CAPACITY_RED_DS]
-        capacity_red_debris = row[StudyRoadSchema.CAPACITY_RED_DEBRIS]
         traffic_idx = row[StudyRoadSchema.TRAFFIC_LINK_INDEX]
-
+        t = time_step_duration
         road_obj = Road(
             id=id,
             init_node=init_node,
@@ -967,9 +979,8 @@ def make_road_objects(
             hazus_road_class=hazus_road_class,
             hazus_bridge_class=hazus_bridge_class,
             is_bridge=is_bridge,
-            capacity_red_damage_state=capacity_red_ds,
             capacity_red_debris=capacity_red_debris,
-            time_step_duration=time_step_duration,
+            time_step_duration=t,
             traffic_idx=traffic_idx,
             verbose=False,
             stoch_ds=True,

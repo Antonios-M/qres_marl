@@ -779,7 +779,7 @@ def get_debris_cleanup_time(
 
     return math.ceil(working_days_needed)
 
-def get_hosp_beds(sqft: float, occtype: str) -> int:
+def _get_hosp_beds(sqft: float, occtype: str) -> int:
     """Calculate the number of hospital beds based on building square footage."""
     if occtype == "COM6": # Hospital occupancy type
         building_rec_data = BuildingRecoveryData()
@@ -787,7 +787,7 @@ def get_hosp_beds(sqft: float, occtype: str) -> int:
         return n_beds
     return 0
 
-def get_num_doctors(sqft: float, occtype: str) -> int:
+def _get_num_doctors(sqft: float, occtype: str) -> int:
     """Calculate the number of doctors based on building square footage."""
     if occtype == "COM6": # Hospital occupancy type
         building_rec_data = BuildingRecoveryData()
@@ -1140,7 +1140,6 @@ class Building:
         self.sqft = sqft
         self.is_essential = is_essential
         self.access_road_id = access_road_id
-        self.debris_capacity_reduction = debris_capacity_reduction
         self.is_under_repair = is_under_repair
         self.trucks_per_day = trucks_per_day
         self.str_type = str_type
@@ -1164,6 +1163,10 @@ class Building:
         ## ---------------------Debris---------------------
         if self.calc_debris:
             self.has_debris = self.current_damage_state >= 3
+            if self.has_debris:
+                self.debris_capacity_reduction = debris_capacity_reduction
+            else:
+                self.debris_capacity_reduction = 0.0
         else:
             self.has_debris = False
         if self.has_debris:
@@ -1175,11 +1178,12 @@ class Building:
                 self.trucks_per_day
             )
             self.current_debris_cleanup_time = self.debris_cleanup_time
-
         else:
             self.debris_weight = 0
             self.debris_cleanup_time = 0
             self.current_debris_cleanup_time = 0
+        # print(f"Has debris: {self.has_debris}, debris weight: {self.debris_weight}, debris cleanup time: {self.debris_cleanup_time}")
+        # print(f"Debris capacity reduction: {self.debris_capacity_reduction}")
 
         ## ---------------------Repair---------------------
         if self.stoch_rt:
@@ -1206,15 +1210,23 @@ class Building:
             )
         else:
             self.initial_structural_repair_cost = self.initial_damage_state * 100000
-        self.current_structural_repair_cost = self.initial_structural_repair_cost
+
+        if self.current_damage_state == 0: ## TODO what the fuck this took so long to fix
+            self.current_structural_repair_cost = 0.0
+        else:
+            self.current_structural_repair_cost = self.initial_structural_repair_cost
 
         ## ---------------------Functionality---------------------
-        self.initial_beds = get_hosp_beds(self.sqft, self.occtype)
+        self.initial_beds = _get_hosp_beds(self.sqft, self.occtype)
         self.current_beds = self.get_hosp_beds()
 
-        self.initial_doctors = get_num_doctors(self.sqft, self.occtype)
+        self.initial_doctors = _get_num_doctors(self.sqft, self.occtype)
         self.current_doctors = self.get_doctors()
 
+        if self.is_essential:
+            self.initial_critical_func = 1.0
+        else:
+            self.initial_critical_func = 0.0
         self.current_critical_func = self.get_critical_functionality()
 
         ## post-repair func. downtime
@@ -1225,7 +1237,10 @@ class Building:
             )
         else:
             self.initial_loss_of_function_time = self.initial_damage_state * 30
-        self.current_loss_of_function_time = self.initial_loss_of_function_time
+        if self.current_damage_state == 0:
+            self.current_loss_of_function_time = 0
+        else:
+            self.current_loss_of_function_time = self.initial_loss_of_function_time
 
         ## ---------------------Income/Costs---------------------
         ## income
@@ -1239,8 +1254,12 @@ class Building:
         else:
             self.max_income =  1.25 * ((self.sqft / 750) * 60000)
             self.income_loss = 0.8 * self.max_income
-        self.current_income = self.max_income - self.income_loss
-        self.initial_income_loss = self.income_loss
+        if self.current_damage_state == 0:
+            self.current_income = self.max_income
+            self.initial_income_loss = 0.0
+        else:
+            self.current_income = self.max_income - self.income_loss
+            self.initial_income_loss = self.income_loss
         # print(f"initial post-quake income: {self.current_income}")
         # print(f"Max income: {self.max_income}")
         ## relocation costs
@@ -1252,7 +1271,10 @@ class Building:
             )
         else:
             self.initial_relocation_cost = self.max_income * 0.25
-        self.current_relocation_cost = self.initial_relocation_cost
+        if self.current_damage_state == 0:
+            self.current_relocation_cost = 0.0
+        else:
+            self.current_relocation_cost = self.initial_relocation_cost
 
     def step(
         self,
@@ -1260,18 +1282,22 @@ class Building:
     ):
         self.__log(f'Stepping building: {self.id} with action: {action.value}...')
         if action == BuildingAction.DO_NOTHING:
+            was_functional = self.is_functional
             try:
                 self.__step_functionality()
             except AssertionError as e:
                 pass
-
+            if was_functional == self.is_functional:
+                functionality_restored = False
+            else:
+                functionality_restored = True
             self.__log(f'Building {self.id} is doing nothing')
             state = self.current_repair_time
             done = self.is_functional
             info = self.__get_info()
             info["repair_has_finished"] = False
             info["debris_has_cleared"] = False
-            info["functionality_has_restored"] = False
+            info["functionality_has_restored"] = functionality_restored
             return info
 
         ## ---------- Repair Action ----------
@@ -1279,6 +1305,7 @@ class Building:
             had_debris = self.has_debris
             was_repaired = self.is_fully_repaired
             was_functional = self.is_functional
+
             self.__log('...trying minor repair')
             try:
                 self.__step_debris()
@@ -1301,6 +1328,7 @@ class Building:
             else:
                 repair_finished = True
             ## track if functionality changed
+
             if was_functional == self.is_functional:
                 functionality_restored = False
             else:
@@ -1358,22 +1386,19 @@ class Building:
         return self.current_relocation_cost
 
     def get_critical_functionality(self):
-        if self.occtype in ESSENTIAL_FACILITY_OCC_TYPES:
-            self.initial_critical_func = 1.0
+        # Define functionality values for each damage state
+        damage_to_func = {
+            0: 1.0,   # Fully functional
+            1: 0.75,   # Partial
+            2: 0.3,  # Minimal
+            3: 0.1,   # Non-functional
+            4: 0.0    # Destroyed
+        }
 
-            # Define functionality values for each damage state
-            damage_to_func = {
-                0: 1.0,   # Fully functional
-                1: 0.75,   # Partial
-                2: 0.3,  # Minimal
-                3: 0.1,   # Non-functional
-                4: 0.0    # Destroyed
-            }
+        # Get the functionality for current damage state
+        current_critical_func = damage_to_func.get(self.current_damage_state, 0.0) * self.initial_critical_func
 
-            # Get the functionality for current damage state
-            self.current_critical_func = damage_to_func.get(self.current_damage_state, 0.0) * self.initial_critical_func
-
-            return self.current_critical_func
+        return current_critical_func
 
         # Non-essential facilities have no critical function
         self.initial_critical_func = 0.0
@@ -1390,9 +1415,9 @@ class Building:
             4: 0.0
         }.get(self.current_damage_state)
 
-        self.current_beds = int(self.initial_beds * damage_factor)
+        current_beds = int(self.initial_beds * damage_factor)
 
-        return self.current_beds
+        return current_beds
 
     def get_doctors(self):
         # Damage-to-bed availability mapping
@@ -1404,9 +1429,9 @@ class Building:
             4: 0.0
         }.get(self.current_damage_state)
 
-        self.current_doctors = int(self.initial_doctors * damage_factor)
+        current_doctors = int(self.initial_doctors * damage_factor)
 
-        return self.current_doctors
+        return current_doctors
 
     def __step_debris(self):
         assert not self.is_fully_repaired
@@ -1476,6 +1501,7 @@ class Building:
         assert self.current_damage_state == 0
         # assert self.time_step_after_repair > -1
         assert not self.is_functional
+
         if self.max_income == 0:
             self.is_functional = True
             return
@@ -1490,6 +1516,7 @@ class Building:
         if self.current_loss_of_function_time == 0:
             self.is_functional = True
             self.current_income = self.max_income
+            return
         else:
             # Compute fraction of progress
             fraction_recovered = (self.initial_loss_of_function_time - self.current_loss_of_function_time) / self.initial_loss_of_function_time

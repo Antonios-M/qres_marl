@@ -9,7 +9,6 @@
 #SBATCH --mem-per-cpu=1GB
 
 module load miniconda3
-conda env create -f conda_env_lx.yml -p ./conda_env
 conda activate ./conda_env
 srun python dummy.py
 conda deactivate

@@ -1016,30 +1016,29 @@ class TrafficAccessor:
             study_buildings_gdf,
             study_roads_gdf,
             study_road_idx,
-            recalculate = False,
+            recalculate = True,
             plot = False,
             verbose = False
         ):
             road_idx = study_road_idx
             # If we're not recalculating and the data already exists in the GeoDataFrame, use it
-            if not recalculate:
-                # Filter buildings connected to the given road
-                access_road_idx_col = StudyBuildingSchema.ACCESS_ROAD_IDX if StudyBuildingSchema.ACCESS_ROAD_IDX in study_buildings_gdf.columns else StudyBuildingSchema.ACCESS_ROAD_IDX[:10]
+            # Filter buildings connected to the given road
+            # access_road_idx_col = StudyBuildingSchema.ACCESS_ROAD_IDX if StudyBuildingSchema.ACCESS_ROAD_IDX in study_buildings_gdf.columns else StudyBuildingSchema.ACCESS_ROAD_IDX[:10]
 
-                focus_buildings = study_buildings_gdf[study_buildings_gdf[access_road_idx_col] == road_idx]
+            # focus_buildings = study_buildings_gdf[study_buildings_gdf[access_road_idx_col] == road_idx]
 
-                # If capacity_reduction exists for these buildings, use it directly
-                if StudyBuildingSchema.CAPACITY_REDUCTION in focus_buildings.columns and not focus_buildings[StudyBuildingSchema.CAPACITY_REDUCTION].isna().all():
-                    # Create dictionary of building ID to capacity reduction
-                    all_capacity_reductions_dict = {
-                        idx: reduction for idx, reduction in
-                        zip(focus_buildings.index, focus_buildings[StudyBuildingSchema.CAPACITY_REDUCTION])
-                    }
+            # # If capacity_reduction exists for these buildings, use it directly
+            # if StudyBuildingSchema.CAPACITY_REDUCTION in focus_buildings.columns and not focus_buildings[StudyBuildingSchema.CAPACITY_REDUCTION].isna().all():
+            #     # Create dictionary of building ID to capacity reduction
+            #     all_capacity_reductions_dict = {
+            #         idx: reduction for idx, reduction in
+            #         zip(focus_buildings.index, focus_buildings[StudyBuildingSchema.CAPACITY_REDUCTION])
+            #     }
 
-                    # Get the maximum capacity reduction for this road
-                    max_capacity_reduction = focus_buildings[StudyBuildingSchema.CAPACITY_REDUCTION].max()
+            #     # Get the maximum capacity reduction for this road
+            #     max_capacity_reduction = focus_buildings[StudyBuildingSchema.CAPACITY_REDUCTION].max()
 
-                    return round(max_capacity_reduction, 3), all_capacity_reductions_dict
+            #     return round(max_capacity_reduction, 3), all_capacity_reductions_dict
 
             def _calculate_min_distance_to_nonoverlap_offset(rectangle, center_line, total_width):
                 """
@@ -1183,12 +1182,11 @@ class TrafficAccessor:
             focus_buildings_gdf = gpd.GeoDataFrame(geometry=focus_buildings.geometry, crs=study_buildings_gdf.crs)
             # focus_buildings.loc[:, StudyBuildingSchema.DEBRIS_GEOM] = focus_buildings[StudyBuildingSchema.DEBRIS_GEOM].apply(wkt.loads)
             # Filter focus_buildings to include only 'Extensive' or 'Complete' damage states
-            focus_buildings = focus_buildings[focus_buildings[StudyBuildingSchema.DAMAGE_STATE].isin([DamageStates.to_int('Extensive'), DamageStates.to_int('Complete')])]
+            # focus_buildings = focus_buildings[focus_buildings[StudyBuildingSchema.DAMAGE_STATE].isin([DamageStates.to_int('Extensive'), DamageStates.to_int('Complete')])]
             focus_buildings.loc[:, StudyBuildingSchema.DEBRIS_GEOM] = focus_buildings[StudyBuildingSchema.DEBRIS_GEOM].apply(
                 lambda x: wkt.loads(x) if isinstance(x, str) else x if isinstance(x, Polygon) else None
             )
             focus_debris_gdf = gpd.GeoDataFrame(geometry=focus_buildings[StudyBuildingSchema.DEBRIS_GEOM], crs=study_buildings_gdf.crs)
-
             focus_road_gdf = gpd.GeoDataFrame([study_roads_gdf.loc[road_idx]], geometry='geometry', crs=study_roads_gdf.crs)
 
             # rectangles, debris_rectangles, center_line = _extract_transformed_geometries(focus_buildings_gdf, focus_debris_gdf, focus_road_gdf)
@@ -1297,9 +1295,9 @@ class TrafficAccessor:
         if StudyBuildingSchema.CAPACITY_REDUCTION not in buildings_study_gdf.columns:
             buildings_study_gdf[StudyBuildingSchema.CAPACITY_REDUCTION] = 0.000
         elif StudyRoadSchema.CAPACITY_RED_DS not in roads_study_gdf.columns:
-            roads_study_gdf[StudyRoadSchema.CAPACITY_RED_DS] = 0.0
+            roads_study_gdf[StudyRoadSchema.CAPACITY_RED_DS] = 0.000
         elif StudyRoadSchema.CAPACITY_RED_DEBRIS not in roads_study_gdf.columns:
-            roads_study_gdf[StudyRoadSchema.CAPACITY_RED_DEBRIS] = 0.0
+            roads_study_gdf[StudyRoadSchema.CAPACITY_RED_DEBRIS] = 0.000
 
         # # Iterate through each road in roads_study_gdf
         for idx, row in roads_study_gdf.iterrows():
@@ -1318,14 +1316,13 @@ class TrafficAccessor:
             )
             # print(capacity_reduction_ds)
             # print(capacity_reduction_debris)
-            roads_study_gdf.loc[idx, StudyRoadSchema.CAPACITY_RED_DS] = capacity_reduction_ds
-            roads_study_gdf.loc[idx, StudyRoadSchema.CAPACITY_RED_DEBRIS] = max_capacity_reduction_debris
-            roads_study_gdf.loc[idx, StudyRoadSchema.CAPACITY_REDUCTION] = max(capacity_reduction_ds, max_capacity_reduction_debris)
+            # roads_study_gdf.loc[idx, StudyRoadSchema.CAPACITY_RED_DS] = capacity_reduction_ds
+            # roads_study_gdf.loc[idx, StudyRoadSchema.CAPACITY_RED_DEBRIS] = max_capacity_reduction_debris
+            # roads_study_gdf.loc[idx, StudyRoadSchema.CAPACITY_REDUCTION] = max(capacity_reduction_ds, max_capacity_reduction_debris)
 
-            if recalculate:
-                # Update buildings with capacity reduction values from dictionary
-                for building_id, capacity_reduction in capacity_reduction_debris_dict.items():
-                    buildings_study_gdf.loc[building_id, StudyBuildingSchema.CAPACITY_REDUCTION] = capacity_reduction
+            for building_id, capacity_reduction in capacity_reduction_debris_dict.items():
+                # print(f"Building {building_id} has a capacity reduction of {capacity_reduction} due to debris.")
+                buildings_study_gdf.loc[building_id, StudyBuildingSchema.CAPACITY_REDUCTION] = capacity_reduction
         if plot:
             viz_debris_road_interdep(buildings_gdf=buildings_study_gdf, roads_gdf=roads_study_gdf)
 

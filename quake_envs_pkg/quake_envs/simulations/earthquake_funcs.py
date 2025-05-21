@@ -22,8 +22,11 @@ from .building_config import *
 from .road_config import *
 from .road_funcs import *
 
-from pyincore import HazardService,IncoreClient
-from pyincore_viz.geoutil import GeoUtil as viz
+try:
+    from pyincore import HazardService,IncoreClient
+    from pyincore_viz.geoutil import GeoUtil as viz
+except Exception as e:
+    pass
 from .utils import DamageStates, sample_repair_time
 
 
