@@ -17,3 +17,5 @@ quake_envs_pkg/quake_envs/simulations/toy_testbed/
 quake_envs_pkg/quake_envs/simulations/traffic_geo_networks/
 quake_envs_pkg/quake_envs/simulations/traffic_processed_networks/
 quake_envs_pkg/quake_envs/simulations/traffic_tntp_networks/
+quake_envs_pkg/quake_envs/simulations/hazard_maps/
+quake_envs_pkg/quake_envs/simulations/faults/
