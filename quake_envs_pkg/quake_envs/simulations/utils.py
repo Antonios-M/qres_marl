@@ -115,6 +115,48 @@ def get_project_root(folder: Path = None) -> Path:
     else:
         return folder.resolve().parent.absolute()
 
+
+# # Step 1: Centroids from vs30_map
+# vs30_map["centroid"] = vs30_map.geometry.centroid
+# vs30_map["lon"] = vs30_map.centroid.x
+# vs30_map["lat"] = vs30_map.centroid.y
+# vs30_map["vs30"] = vs30_map["value"]  # alias for clarity
+
+# # Output holders
+# pga_data, sa03_data, sa10_data = [], [], []
+
+# # Step 2: Process by unique VS30
+# for vs30_val in vs30_map["vs30"].unique():
+#     subset = vs30_map[vs30_map["vs30"] == vs30_val]
+#     coords = subset[["lon", "lat"]].to_numpy()
+
+#     files = PathUtils.haz_map_folder(vs30_val)
+
+#     for name, data_list in zip(["PGA", "SA0P3", "SA1P0"], [pga_data, sa03_data, sa10_data]):
+#         curve_df = pd.read_csv(files[name]["curve"])
+#         map_df = pd.read_csv(files[name]["map"])
+
+#         # Use KDTree to find closest entries
+#         matched_curve = PathUtils.closest_rows_by_tree(curve_df, coords)
+#         matched_map = PathUtils.closest_rows_by_tree(map_df, coords)
+
+#         # Combine + include return periods
+#         for i, (curve_row, map_row) in enumerate(zip(matched_curve.to_dict(orient="records"),
+#                                                      matched_map.to_dict(orient="records"))):
+#             combined = {
+#                 **curve_row,
+#                 "475yr": map_row["475"],
+#                 "975yr": map_row["975"],
+#                 "2475yr": map_row["2475"],
+#                 "10000yr": map_row["10000"],
+#                 "geometry": subset.iloc[i].centroid
+#             }
+#             data_list.append(combined)
+
+# # Step 3: Convert to GeoDataFrames (final output)
+# hazard_map_pga = gpd.GeoDataFrame(pga_data, geometry="geometry", crs=vs30_map.crs)
+# hazard_map_sa03 = gpd.GeoDataFrame(sa03_data, geometry="geometry", crs=vs30_map.crs)
+# hazard_map_sa10 = gpd.GeoDataFrame(sa10_data, geometry="geometry", crs=vs30_map.crs)
 class PathUtils:
     """
     Utils for file names
@@ -131,11 +173,48 @@ class PathUtils:
 
     bridges_folder = get_project_root() / "bridges"
 
+    faults_folder = get_project_root() / "faults"
+
+    hazard_folder = get_project_root() / "hazard_map"
+
     earthquake_model_folder = get_project_root() / "earthquake"
 
     # FILES
 
     # Building files / Roads files
+    active_faults_shp = faults_folder / "gem_active_faults_harmonized.geojson"
+    seismic_records = faults_folder / "seismic_record.geojson"
+    shear_wave_velocity = hazard_folder / "vs30_map.geojson"
+
+    def haz_map_folder(vs30: int):
+        vs30list = np.array([150, 185, 260, 365, 760, 1080, 1500])
+        _vs30 = vs30list[np.argmin(np.abs(vs30list - vs30))]
+        base = get_project_root() / "hazard_map" / f"vs30-{_vs30}"
+        return {
+            "PGA": {
+                "curve": base / "PGA" / "curves-truncated.csv",
+                "map": base / "PGA" / "map.csv"
+            },
+            "SA0P3": {
+                "curve": base / "SA0P3" / "curves-truncated.csv",
+                "map": base / "SA0P3" / "map.csv"
+            },
+            "SA1P0": {
+                "curve": base / "SA1P0" / "curves-truncated.csv",
+                "map": base / "SA1P0" / "map.csv"
+            }
+        }
+
+    def closest_rows_by_tree(df, coords):
+        from scipy.spatial import cKDTree
+        tree = cKDTree(df[["lon", "lat"]].values)
+        _, idx = tree.query(coords)
+        return df.iloc[idx].reset_index(drop=True)
+
+    pga_map = hazard_folder / "pga.geojson"
+    sa03_map = hazard_folder / "sa0p3.geojson"
+    sa10_map = hazard_folder / "sa1p0.geojson"
+
     buildings_nsi_anaheim_shp = building_geo_data_folder / "nsi_anaheim.shp"
     buildings_study_anaheim = Path(r"c:\Users\Anton\OneDrive\Desktop\tudelft_thesis\City_Res_RL\src\simulations\buildings_geo_data\anaheim_buildings.shp")
     roads_anaheim_shp = Path(r"c:\Users\Anton\OneDrive\Desktop\tudelft_thesis\City_Res_RL\src\simulations\roads_geo_data\anaheim_roads.shp")
