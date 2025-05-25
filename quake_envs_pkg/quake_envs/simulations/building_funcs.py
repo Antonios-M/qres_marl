@@ -1088,6 +1088,7 @@ class Building:
     def __init__(
         self,
         id: str,  # id for building identification
+        geometry: Polygon,
         damage_state_probs: np.array,  # Damage state probabilities [0.1,0.2,0.5,0.05,0.05]
         occtype: str,  # Occupancy type
         str_type: str, # detailed (str_typ2) structure type see building_config.py
@@ -1134,6 +1135,8 @@ class Building:
         # Basic building characteristics
         self.verbose = verbose
         self.id = id
+        self.geometry = geometry
+        self.centroid = geometry.centroid
 
         self.occtype = occtype
         self.num_stories = num_stories
@@ -1582,9 +1585,10 @@ def make_building_objects(
             row[StudyBuildingSchema.PLS4]
         ])
 
-
+        # print(row["geometry"])
         building_obj = Building(
             id=str(idx),
+            geometry=row["geometry"],
             damage_state_probs=damage_state_probs,
             occtype=row[StudyBuildingSchema.OCC_TYPE],
             str_type=row[StudyBuildingSchema.STR_TYP2],

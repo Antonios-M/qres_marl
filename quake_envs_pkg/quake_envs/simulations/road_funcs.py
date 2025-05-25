@@ -694,6 +694,7 @@ class Road:
     def __init__(
         self,
         id,
+        geometry: LineString,
         init_node: int,
         term_node: int,
         flow: float,
@@ -719,6 +720,8 @@ class Road:
         self.cost_decay = "quadratic"
         # self.cost_decay = "linear"
         self.id = id
+        self.geometry = geometry
+        self.centroid = geometry.centroid
         self.init_node = init_node
         self.term_node = term_node
         self.flow = flow
@@ -970,6 +973,7 @@ def make_road_objects(
         t = time_step_duration
         road_obj = Road(
             id=id,
+            geometry=row["geometry"],
             init_node=init_node,
             term_node=term_node,
             flow=0.0,

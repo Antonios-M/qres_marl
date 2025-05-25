@@ -631,6 +631,7 @@ class EarthquakeAccessor:
         else:
             return 70 * pga_ratio - 180
 
+
     def POST_incore_eq_road_hazard_values(self,
         client: IncoreClient,
         eq_id : str,
