@@ -78,3 +78,94 @@ plt.ylabel("Performance", fontsize=14)
 plt.legend(loc='lower left')
 plt.tight_layout()
 plt.show()
+
+
+# def plot_avoided_losses_matrix(inference="all", bins=20, n=10,
+#                                figsize=(12, 6), save_path=None):
+#     """
+#     Plots a 2D heatmap matrix: CAL ratio (x-axis) vs earthquake magnitudes (y-axis).
+#     Color intensity = ratio of (instances in bin) to number of rollouts.
+#     Earthquake bins use 0.5 steps and include both low and high values.
+#     """
+#     policy_list = ["random", "importance_based", "DCMAC"]
+#     titles = ["Random", "Importance Based", "DCMAC"]
+
+#     if inference != "all":
+#         policy_list = inference if isinstance(inference, list) else [inference]
+#         titles = policy_list
+
+#     cmap = cm.get_cmap("viridis")  # perceptually uniform
+
+#     fig, axes = plt.subplots(1, len(policy_list), figsize=figsize, sharey=True)
+#     if len(policy_list) == 1:
+#         axes = [axes]
+
+#     for i, name in enumerate(policy_list):
+#         ax = axes[i]
+
+#         # --- inference code --------------------------------------
+#         if name == "DCMAC":
+#             agent = AgentInference(name, env)
+#             checkpoint_path, episode = get_trained_agent_dir()
+#             agent.load_weights(checkpoint_path, episode)
+#         else:
+#             agent = HeuristicInference(name=name, env=env)
+
+#         agent.get_n_rollouts(n=n)
+#         losses      = agent.plotter.batch_losses
+#         resilience  = agent.plotter.batch_resilience
+#         quake_mags  = agent.plotter.batch_mags
+#         # ---------------------------------------------------------
+
+#         if not losses or not resilience or not quake_mags:
+#             print(f"Skipping '{name}' due to invalid data.")
+#             continue
+
+#         cal_vals = []
+#         mags = []
+#         for l, r, q in zip(losses, resilience, quake_mags):
+#             total = sum(l) + sum(r)
+#             if total > 0:
+#                 cal = sum(r) / total
+#                 cal_vals.append(cal)
+#                 mags.append(q)
+
+#         if not cal_vals or not mags:
+#             print(f"No valid CAL or magnitude data for '{name}'")
+#             continue
+
+#         # Define fixed bin edges for CAL and quake magnitude
+#         cal_bins = np.linspace(0, 1, bins + 1)
+
+#         mag_min, mag_max = np.floor(min(mags)), np.ceil(max(mags))
+#         mag_bins = np.arange(mag_min, mag_max + 0.5, 0.5)  # 0.5 step, inclusive
+
+#         # Create 2D histogram
+#         hist, xedges, yedges = np.histogram2d(cal_vals, mags,
+#                                               bins=[cal_bins, mag_bins])
+
+#         # Normalize by rollouts
+#         hist /= n
+
+#         # Plot
+#         mesh = ax.pcolormesh(xedges, yedges, hist.T, cmap=cmap,
+#                              shading='auto')
+#         cbar = fig.colorbar(mesh, ax=ax)
+#         cbar.set_label("Ratio to Rollouts")
+
+#         ax.set_xlabel("CAL")
+#         if i == 0:
+#             ax.set_ylabel("Earthquake Magnitude")
+#         ax.set_title(titles[i])
+#         ax.set_xlim(0, 1)
+
+#     fig.suptitle(
+#         rf"$\bf{{CAL\ Matrix}}$: CAL vs Quake Magnitude (0.5 steps), Normalized by {n} Rollouts, toy-city-{env.n_agents}",
+#         fontsize=14, fontfamily="serif"
+#     )
+#     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+#     if save_path:
+#         fig.savefig(save_path, dpi=300)
+
+#     plt.show()

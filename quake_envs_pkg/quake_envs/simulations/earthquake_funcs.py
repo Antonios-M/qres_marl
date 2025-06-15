@@ -135,6 +135,9 @@ class FragilityCurve:
         # print(probs)
 
         states = [DamageStates.UNDAMAGED.value] + self.state_names
+        # print(f"States: {states}")
+        # print(f"Probs: {probs.values}")
+        # print(f"Sum of probs: {np.sum(probs.values)}")
         samples = np.random.choice(states, size=n_samples, p=probs.values)
         # res = samples if n_samples > 1 else samples[0]
         # print('Sample are: ' + str(samples))
@@ -142,7 +145,7 @@ class FragilityCurve:
         return samples if n_samples > 1 else samples[0]
 
     def plot_fragility_analysis(self, im_range=None, figsize=(15, 8),
-                            colors=None, im_label='Intensity Measure (g)'):
+                                colors=None, im_label='Intensity Measure (g)', struct_type='Structure'):
         """
         Create a comprehensive visualization of fragility curves and state probabilities.
 
@@ -154,64 +157,85 @@ class FragilityCurve:
         figsize : tuple, optional
             Figure size in inches (width, height)
         colors : dict, optional
-            Dictionary mapping states to colors
+            Dictionary mapping states to colors.
+            If None, a default colormap is used.
         im_label : str, optional
-            Label for the intensity measure axis
+            Label for the intensity measure axis.
 
         Returns
         -------
         fig : matplotlib.figure.Figure
-            The created figure
+            The created figure.
         (ax1, ax2) : tuple
-            Tuple of the two axes objects
+            Tuple of the two axes objects for fragility curves and state probabilities.
         """
-        # Set up IM range if not provided
+        # Set up IM range if not provided, ensuring it covers relevant medians
         if im_range is None:
+            if not self.states:
+                raise ValueError("No damage states defined. Cannot determine IM range.")
             max_median = max(median for median, _ in self.states.values())
             im_range = (0, 2 * max_median)
 
-        im_values = np.linspace(im_range[0], im_range[1], 100)
+        im_values = np.linspace(im_range[0], im_range[1], 200) # Increased resolution
 
-        # Create default colors if not provided
+        # Create default colors if not provided, ensuring distinct colors for each state
         if colors is None:
             default_colors = plt.cm.viridis(np.linspace(0, 1, len(self.states) + 1))
-            colors = {'no_damage': default_colors[0]}
-            colors.update({state: color for state, color
-                        in zip(self.states.keys(), default_colors[1:])})
+            # Ensure 'No Damage' is clearly distinct, often the first color
+            colors = {'No Damage': default_colors[0]}
+            # Map remaining colors to defined damage states
+            for i, state_name in enumerate(self.states.keys()):
+                colors[state_name] = default_colors[i + 1]
 
-        # Create figure
+        # Set up the figure and a GridSpec for flexible subplots
         fig = plt.figure(figsize=figsize)
-        gs = GridSpec(2, 1, height_ratios=[1, 1])
+        gs = GridSpec(2, 1, height_ratios=[1, 1], hspace=0.3) # Added hspace for better separation
 
-        # Plot 1: Exceedance probabilities (fragility curves)
+        # --- Plot 1: Exceedance Probabilities (Fragility Curves) ---
         ax1 = fig.add_subplot(gs[0])
+
+        # Calculate exceedance probabilities for all IM values and states
         exceedance_probs = np.array([self.exceedance_probabilities(im) for im in im_values])
 
+        # Plot each fragility curve
         for i, state in enumerate(self.states.keys()):
             ax1.plot(im_values, exceedance_probs[:, i],
-                    label=state, color=colors[state])
+                    label=f'$P(\\text{{DS}} \\geq \\text{{{state}}})$', # LaTeX for probability of exceeding
+                    color=colors[state], linewidth=2) # Added linewidth for clarity
 
-        ax1.grid(True)
-        ax1.legend()
-        ax1.set_xlabel(im_label)
-        ax1.set_ylabel('Probability of Exceedance')
-        ax1.set_title('Fragility Curves')
+        ax1.grid(True, linestyle='--', alpha=0.7) # Nicer grid
+        ax1.legend(title='Damage States', loc='best', frameon=True) # Added legend title and frame
+        ax1.set_xlabel(im_label, fontsize=12)
+        ax1.set_ylabel('Probability of Exceedance', fontsize=12)
+        ax1.set_title(f'Fragility of {struct_type}: Exceedance Probability Curves', fontsize=14, fontweight='bold')
+        ax1.set_ylim(0, 1) # Probabilities are between 0 and 1
+        ax1.set_xlim(im_range[0], im_range[1]) # Ensure x-axis matches im_range
 
-        # Plot 2: State probabilities
+        # --- Plot 2: State Probabilities ---
         ax2 = fig.add_subplot(gs[1])
+
+        # Calculate state probabilities for all IM values and states
         state_probs = np.array([self.state_probabilities(im) for im in im_values])
 
-        for i, state in enumerate(['no_damage'] + list(self.states.keys())):
+        # Ensure the order of states for plotting matches the calculated probabilities
+        # Assuming self.state_probabilities returns 'No Damage' first, then DS1, DS2, etc.
+        ordered_state_labels = ['No Damage'] + list(self.states.keys())
+
+        # Plot each state probability curve
+        for i, state_label in enumerate(ordered_state_labels):
             ax2.plot(im_values, state_probs[:, i],
-                    label=state, color=colors[state])
+                    label=f'$P(\\text{{DS}} = \\text{{{state_label}}})$', # LaTeX for probability of being in a state
+                    color=colors[state_label], linewidth=2)
 
-        ax2.grid(True)
-        ax2.legend()
-        ax2.set_xlabel(im_label)
-        ax2.set_ylabel('Probability of Being in State')
-        ax2.set_title('State Probabilities')
+        ax2.grid(True, linestyle='--', alpha=0.7)
+        ax2.legend(title='Damage States', loc='best', frameon=True)
+        ax2.set_xlabel(im_label, fontsize=12)
+        ax2.set_ylabel('Probability of Being in State', fontsize=12)
+        ax2.set_title(f'Fragility of {struct_type}: State Probablity Curves', fontsize=14, fontweight='bold')
+        ax2.set_ylim(0, 1)
+        ax2.set_xlim(im_range[0], im_range[1])
 
-        plt.tight_layout()
+        plt.tight_layout() # Adjusts subplot params for a tight layout
         return fig, (ax1, ax2)
 
 @dataclass(frozen=True)
@@ -684,11 +708,13 @@ class EarthquakeAccessor:
 
     def predict_building_DS(
         self,
-        save_directory: str,
-        base_name: str,
-        eq_magnitude: float,
+        save_directory: str=None,
+        base_name: str=None,
+        eq_magnitude: float=None,
         use_random_IMs: bool = False,
-        use_saved_IMs: bool = False
+        use_saved_IMs: bool = False,
+        use_psha: bool = False,
+        gms: np.ndarray = None
     ) -> None:
         """
         Predict damage states for buildings based on PGA (Peak Ground Acceleration) values.
@@ -703,6 +729,7 @@ class EarthquakeAccessor:
                 high=0.7,
                 size=len(self._parent._buildings_study_gdf)
             )
+
         elif use_saved_IMs:
             # Get list of matching JSON files
             json_files = list(Path(save_directory).glob(f"{base_name}_{str(eq_magnitude)}.json"))
@@ -715,8 +742,19 @@ class EarthquakeAccessor:
             # Load the JSON data
             with open(selected_file, "r") as f:
                 im_data = json.load(f)
-            self._parent._buildings_study_gdf[StudyBuildingSchema.PGA] = list(im_data.values())
 
+            # Pick a random iteration key from the dictionary
+            iteration_key = random.choice(list(im_data.keys()))
+            selected_ims = im_data[iteration_key]
+
+            # Assign IMs to the buildings GeoDataFrame
+            # print(f"Assigning IMs from iteration {iteration_key} to buildings.")
+            # print(f"Selected IMs: {list(selected_ims.values())}")
+            self._parent._buildings_study_gdf[StudyBuildingSchema.PGA] = list(selected_ims.values())
+
+
+        elif use_psha:
+            self._parent._buildings_study_gdf[StudyBuildingSchema.PGA] = gms[:, 0]
 
         fragility = FragilityBuildingPGA_low_code()
         self._parent._buildings_study_gdf[StudyBuildingSchema.PLS0] = 0.0
@@ -748,11 +786,13 @@ class EarthquakeAccessor:
 
     def predict_road_DS(
         self,
-        save_directory: str,
-        base_name: str,
-        eq_magnitude: float,
+        save_directory: str=None,
+        base_name: str=None,
+        eq_magnitude: float=None,
         use_random_IMs: bool = False,
-        use_saved_IMs: bool = False
+        use_saved_IMs: bool = False,
+        use_psha: bool = False,
+        gms: np.ndarray = None
     ) -> None:
         none_bridge_mask = self._parent._roads_study_gdf[StudyRoadSchema.HAZUS_BRIDGE_CLASS] == 'None'
 
@@ -776,7 +816,11 @@ class EarthquakeAccessor:
 
             # Load the JSON data
             with open(selected_file, "r") as f:
-                im_data = json.load(f)
+                _im_data = json.load(f)
+
+            # Pick a random iteration key from the dictionary
+            iteration_key = random.choice(list(_im_data.keys()))
+            im_data = _im_data[iteration_key]
 
             # Convert indices to integers and filter based on `not_none_bridge_mask`
             matching_indices = [int(idx) for idx in im_data.keys()]
@@ -799,6 +843,12 @@ class EarthquakeAccessor:
 
             self._log("Road IMs updated successfully.")
 
+        elif use_psha:
+            # Apply ground motions only to roads with bridge class 'None'
+            self._parent._roads_study_gdf.loc[none_bridge_mask, StudyRoadSchema.PGD] = gms[none_bridge_mask.values, 3]
+            self._parent._roads_study_gdf.loc[none_bridge_mask, StudyRoadSchema.SA03SEC] = gms[none_bridge_mask.values, 1]
+            self._parent._roads_study_gdf.loc[none_bridge_mask, StudyRoadSchema.SA1SEC] = gms[none_bridge_mask.values, 2]
+
         fragility = FragilityRoadPGD()
         for idx, row in self._parent._roads_study_gdf.iterrows():
             if row[StudyRoadSchema.HAZUS_BRIDGE_CLASS] == 'None':
@@ -818,11 +868,13 @@ class EarthquakeAccessor:
 
     def predict_bridge_DS(
         self,
-        save_directory: str,
-        base_name: str,
-        eq_magnitude: float,
+        save_directory: str=None,
+        base_name: str=None,
+        eq_magnitude: float=None,
         use_random_IMs: bool = False,
-        use_saved_IMs: bool = False
+        use_saved_IMs: bool = False,
+        use_psha: bool = False,
+        gms: np.ndarray = None
     ) -> None:
         # Create boolean mask for rows where bridge class is NOT 'None'
         not_none_bridge_mask = self._parent._roads_study_gdf[StudyRoadSchema.HAZUS_BRIDGE_CLASS] != 'None'
@@ -848,36 +900,53 @@ class EarthquakeAccessor:
             # Get list of matching JSON files
             json_files = list(Path(save_directory).glob(f"{base_name}_{str(eq_magnitude)}.json"))
             if not json_files:
-                raise FileNotFoundError(f"No files matching {base_name}_*.json found in {save_directory}")
+                raise FileNotFoundError(f"No files matching {base_name}_{eq_magnitude}.json found in {save_directory}")
 
-            # Pick a random file
+            # Pick a random file (you likely only have one per magnitude)
             selected_file = json_files[0]
-            # print(f"Using IMs from: {selected_file}")
 
             # Load the JSON data
             with open(selected_file, "r") as f:
-                im_data = json.load(f)
+                all_iterations_data = json.load(f)
 
-            # Convert indices to integers and filter based on `not_none_bridge_mask`
-            matching_indices = [int(idx) for idx in im_data.keys()]
-            valid_indices = self._parent._roads_study_gdf.index.intersection(matching_indices)
+            # Pick a random iteration key
+            iteration_key = random.choice(list(all_iterations_data.keys()))
+            iteration_data = all_iterations_data[iteration_key]  # should be a dict with str(index) -> [sa03, sa1, pgd]
+
+            # Convert keys (indices) to integers
+            available_indices = [int(idx) for idx in iteration_data.keys()]
+            valid_indices = self._parent._roads_study_gdf.index.intersection(available_indices)
             valid_mask = self._parent._roads_study_gdf.index.isin(valid_indices) & not_none_bridge_mask
 
-            # Ensure valid_mask and values have the same length before assignment
             if valid_mask.any():
-                valid_indices_list = list(valid_indices)  # Convert to list to ensure consistent ordering
+                valid_indices_list = list(valid_indices)
 
-                # Convert values to Series with correct index alignment
-                sa03_series = pd.Series([im_data[str(idx)][0] for idx in valid_indices_list], index=valid_indices_list)
-                sa1_series = pd.Series([im_data[str(idx)][1] for idx in valid_indices_list], index=valid_indices_list)
-                pgd_series = pd.Series([im_data[str(idx)][2] for idx in valid_indices_list], index=valid_indices_list)
+                # Build series from filtered data, aligning with DataFrame indices
+                sa03_series = pd.Series(
+                    {idx: iteration_data[str(idx)][0] for idx in valid_indices_list}
+                )
+                sa1_series = pd.Series(
+                    {idx: iteration_data[str(idx)][1] for idx in valid_indices_list}
+                )
+                pgd_series = pd.Series(
+                    {idx: iteration_data[str(idx)][2] for idx in valid_indices_list}
+                )
 
-                # Assign values using the correct index
+                # Assign values to the GeoDataFrame
                 self._parent._roads_study_gdf.loc[valid_indices_list, StudyRoadSchema.SA03SEC] = sa03_series
                 self._parent._roads_study_gdf.loc[valid_indices_list, StudyRoadSchema.SA1SEC] = sa1_series
                 self._parent._roads_study_gdf.loc[valid_indices_list, StudyRoadSchema.PGD] = pgd_series
 
-            self._log("Bridge IMs updated successfully.")
+            self._log(f"Bridge IMs updated successfully from {selected_file}, iteration: {iteration_key}.")
+
+
+        elif use_psha:
+            self._parent._roads_study_gdf.loc[not_none_bridge_mask, StudyRoadSchema.PGD] = gms[not_none_bridge_mask.values, 3]
+            self._parent._roads_study_gdf.loc[not_none_bridge_mask, StudyRoadSchema.SA03SEC] = gms[not_none_bridge_mask.values, 1]
+            self._parent._roads_study_gdf.loc[not_none_bridge_mask, StudyRoadSchema.SA1SEC] = gms[not_none_bridge_mask.values, 2]
+            # print(f"SA 03: {self._parent._roads_study_gdf.loc[not_none_bridge_mask, StudyRoadSchema.SA03SEC].values}")
+            # print(f"SA 1.0: {self._parent._roads_study_gdf.loc[not_none_bridge_mask, StudyRoadSchema.SA1SEC].values}")
+            # print(f"PGD: {self._parent._roads_study_gdf.loc[not_none_bridge_mask, StudyRoadSchema.PGD].values}")
 
         fragility = FragilityBridgeSA_PGD()
         for idx, row in self._parent._roads_study_gdf.iterrows():
@@ -905,10 +974,11 @@ class EarthquakeAccessor:
 
                 modified_sa_ds_distributions = sa_modifier.modify_spectral_accelerations()
                 fragility_curve = FragilityCurve(modified_sa_ds_distributions)
-
-                probs = fragility_curve.state_probabilities(pgd)
-
-                damage_state = fragility_curve.sample_damage_state(pgd)
+                # print(f"Modified SA distributions: {modified_sa_ds_distributions}")
+                probs = fragility_curve.state_probabilities(sa1_0)
+                # print(f"Probs: {probs}")
+                # print(f"SA: {sa1_0}")
+                damage_state = fragility_curve.sample_damage_state(sa1_0)
                 self._parent._roads_study_gdf.loc[idx, StudyRoadSchema.DAMAGE_STATE] = damage_state
 
     def predict_building_RT(self, seed: int=None) -> None:

@@ -44,9 +44,9 @@ inference_env = gym.make(ENV_NAME).unwrapped
 alg_config = load_config(algorithm=ALGORITHM)  # load default config
 agent_class = imprl.agents.get_agent_class(ALGORITHM)
 LearningAgent = agent_class(env, alg_config, device)  # initialize agent
-print(f"Loaded default configuration for {ALGORITHM}.")
+print(f"Loaded {ALGORITHM} with config: {alg_config}")
 
-PROJECT = "final-DCMAC-toy-city-30"
+PROJECT = "DCMAC-toy-city-30-fixed-econ-func"
 ENTITY = "antoniosmavrotas-tu-delft"
 # WANDB_DIR = "./experiments/data"
 # WANDB_DIR = "/scratch/pbhustali"
@@ -55,6 +55,7 @@ LOGGING_FREQUENCY = 100
 CHECKPT_FREQUENCY = 5_000
 INFERENCING_FREQUENCY = 5_000
 NUM_INFERENCE_EPISODES = 500
+
 
 
 def parallel_rollout(args):

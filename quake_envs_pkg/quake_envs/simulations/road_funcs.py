@@ -683,7 +683,7 @@ class RoadAction(Enum):
         MAJOR_REPAIR (int): Perform a repair until road is fully repaired. Value = 2.
     """
     DO_NOTHING = 0  # No action taken
-    REPAIR = 1  # Small-scale repairs
+    REPAIR = 1
     # DO_NOTHING_ = 2
 
     def __str__(self):
@@ -691,6 +691,17 @@ class RoadAction(Enum):
         return self.name.replace("_", " ").title()  # "REPAIR" -> "Minor Repair"
 
 class Road:
+    def __init_empty(self):
+        self.initial_damage_state = 0
+        self.current_damage_state = 0
+        self.initial_repair_time = 0
+        self.initial_repair_cost = 0
+        self.current_repair_cost = 0
+        self.current_repair_time = 0
+        self.capacity_red_damage_state = 0.0
+        self.capacity_red_debris = 0.0
+        self.capacity_reduction = 0.0
+
     def __init__(
         self,
         id,
@@ -698,13 +709,11 @@ class Road:
         init_node: int,
         term_node: int,
         flow: float,
-        damage_state,
         capacity,
         length_miles,
         hazus_road_class,
         hazus_bridge_class,
         is_bridge,
-        capacity_red_debris,
         time_step_duration,
         traffic_idx,
         verbose: bool,
@@ -729,6 +738,29 @@ class Road:
         self.road_class = hazus_road_class
         self.bridge_class = hazus_bridge_class
         self.capacity = capacity
+        self.verbose = verbose
+        self.traffic_idx = traffic_idx
+        self.length_miles = length_miles
+        self.time_step_duration = time_step_duration
+        self.value = 0.0
+        self.__init_empty()
+        if self.is_bridge:
+            self.max_rep_cost = get_bridge_repair_cost(
+                self.bridge_class,
+                4
+            )
+        else:
+            self.max_rep_cost = get_road_repair_cost(
+                self.road_class,
+                4,
+                self.length_miles
+            )
+
+    def reset(
+        self,
+        damage_state: int,
+        capacity_red_debris: float
+    ):
         ## ---------------------Damage State---------------------
         if self.stoch_ds:
             self.initial_damage_state = damage_state
@@ -748,27 +780,23 @@ class Road:
         else:
             self.capacity_red_debris = 0.0
 
-        self.length_miles = length_miles
-        self.hazus_road_class = hazus_road_class
+        self.initial_capacity_reduction_damage_state = self.capacity_red_damage_state
         self.capacity_reduction = max(self.capacity_red_damage_state, self.capacity_red_debris)
         self.is_fully_repaired = self.current_damage_state == 0
         self.is_debris_free = self.capacity_red_debris == 0.0
-        self.time_step_duration = time_step_duration
-        self.verbose = verbose
-        self.traffic_idx = traffic_idx
-        self.value = 0.0
+
 
         ##---------------------Repair---------------------
         if self.is_bridge: ## Bridges
             ## Repair Time
-            if stoch_rt:
+            if self.stoch_rt:
                 self.initial_repair_time = get_bridge_repair_time(
                     self.initial_damage_state
                 )
             else:
                 self.initial_repair_time = self.initial_damage_state * 80
             ## Repair Cost
-            if stoch_cost:
+            if self.stoch_cost:
                 self.initial_repair_cost = get_bridge_repair_cost(
                     self.bridge_class,
                     self.initial_damage_state
@@ -777,14 +805,14 @@ class Road:
                 self.initial_repair_cost = self.initial_damage_state * 100000
         else: ## Roads
             ## Repair Time
-            if stoch_rt:
+            if self.stoch_rt:
                 self.initial_repair_time = get_road_repair_time(
                     self.initial_damage_state
                 )
             else:
                 self.initial_repair_time = self.initial_damage_state * 40
             ## Repair Cost
-            if stoch_cost:
+            if self.stoch_cost:
                 self.initial_repair_cost = get_road_repair_cost(
                     self.road_class,
                     self.initial_damage_state,
@@ -866,10 +894,11 @@ class Road:
             self.current_repair_cost = self.initial_repair_cost * remaining_cost_fraction
 
         # Apply damage state capacity reduction, using the quadratic decay as well
+        remaining_capacity_fraction = 1 - (fraction_complete) ** 2
         self.capacity_red_damage_state = round(
             max(0.0, (
-                self.capacity_red_damage_state - (fraction_complete * self.capacity_red_damage_state)
-            )), 3)
+                self.initial_capacity_reduction_damage_state * remaining_capacity_fraction
+            )), 6)
         # if self.current_damage_state == 0:
         #     self.capacity_red_damage_state = 0.0
 
@@ -934,6 +963,32 @@ class Road:
             f"Repair Cost: ${self.repair_cost:,.2f}"
         )
 
+def reset_road_objects(
+    buildings: List[Building],
+    roads_study_gdf: gpd.GeoDataFrame,
+    roads: List[Road]
+):
+    for idx, row in roads_study_gdf.iterrows():
+        ## this is done after all buildings reset()
+        id = idx
+        capacity_red_debris = -1
+        for building in buildings:
+            if building.access_road_id == id:
+                if building.debris_capacity_reduction > capacity_red_debris:
+                    capacity_red_debris = building.debris_capacity_reduction
+
+        if capacity_red_debris == -1:
+            capacity_red_debris = 0.0
+
+        roads[idx].reset(
+            damage_state=row[StudyRoadSchema.DAMAGE_STATE],
+            capacity_red_debris=capacity_red_debris
+        )
+
+    return roads
+
+
+
 def make_road_objects(
     buildings: List[Building],
     roads_study_gdf: gpd.GeoDataFrame,
@@ -964,7 +1019,6 @@ def make_road_objects(
             init_node = _traffic_row['init_node']
             term_node = _traffic_row['term_node']
             capacity = _traffic_row['capacity']
-        damage_state = row[StudyRoadSchema.DAMAGE_STATE]
         length_miles = row[StudyRoadSchema.LEN_MILE]
         hazus_road_class = row[StudyRoadSchema.HAZUS_ROAD_CLASS]
         hazus_bridge_class = row[StudyRoadSchema.HAZUS_BRIDGE_CLASS]
@@ -978,12 +1032,10 @@ def make_road_objects(
             term_node=term_node,
             flow=0.0,
             capacity=capacity,
-            damage_state=damage_state,
             length_miles=length_miles,
             hazus_road_class=hazus_road_class,
             hazus_bridge_class=hazus_bridge_class,
             is_bridge=is_bridge,
-            capacity_red_debris=capacity_red_debris,
             time_step_duration=t,
             traffic_idx=traffic_idx,
             verbose=False,

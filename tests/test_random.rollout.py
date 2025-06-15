@@ -23,9 +23,9 @@ from quake_envs.simulations.utils import *
 from imprl.post_process.inference import HeuristicInference
 from imprl.post_process.inference import AgentInference
 
-env = gym.make("quake-res-4-v1")
-env_2 = gym.make("quake-res-30-v1")
-save_env_config = 0
+env_4 = gym.make("quake-res-4-v1")
+env_30 = gym.make("quake-res-30-v1")
+save_env_config = 1
 _baselines = ["random", "do_nothing", "importance_based"]
 baseline = _baselines[2]
 viz_environment = 0
@@ -36,211 +36,181 @@ run_n = 0
 run_avoided_losses = 1
 eval_single = True
 
-curr = "v8-cal-loss-reward-env-fixed"
+curr = "v8-cal-loss-reward-env-fixed" ## 45000
 curr_30 = "v8-cal-loss-reward-30-components"
-v8 = "v8_DCMAC"
+curr_30_rfix = "v9-30-reward-fix"  #60000
+v8 = "v8_DCMAC" #45000
+v9 = "v9-DCMAC" #70000
+v7_qmix = "v7_QMIX_PS" #99999
+v7_vdn_ps = "v7" #99999
+v9_loss_reward = "v9-30-loss-reward-DCMAC" #99999
 
-env = env_2
+env = env_30
 
-def get_trained_agent_dir(v=curr_30, checkpt=45000):
+# env.resilience.simulation.viz_environment(plot_name="test")
+def get_trained_agent_dir(name=None,v=v9_loss_reward, env=env_30, checkpt=45000):
+    error = False
+    if name == "DCMAC":
+        if env.n_agents == 4:
+            v = curr
+            checkpt = 45000
+        else:
+            v = v9
+            checkpt = 70000
+    elif name == "QMIX_PS":
+        if env.n_agents == 4:
+            v = v7_qmix
+            checkpt = 99999
+        else:
+            error = True
+    elif name == "VDN_PS":
+        if env.n_agents == 4:
+            v = v7_vdn_ps
+            checkpt = 99999
+        else:
+            error = True
+
+    if error:
+        print(f"Error: The configuration for '{name}' with {env.n_agents} agents is not supported.")
+        return None, None # Example: return None to indicate failure
+
     base_path = "wandb"
     return base_path + "\\" + v + "\\files", checkpt
 
-# def plot_avoided_losses_matrix(inference="all", bins=20, n=10,
-#                                figsize=(12, 6), save_path=None):
-#     """
-#     Plots a 2D heatmap matrix: CAL ratio (x-axis) vs earthquake magnitudes (y-axis).
-#     Color intensity = ratio of (instances in bin) to number of rollouts.
-#     Earthquake bins use 0.5 steps and include both low and high values.
-#     """
-#     policy_list = ["random", "importance_based", "DCMAC"]
-#     titles = ["Random", "Importance Based", "DCMAC"]
-
-#     if inference != "all":
-#         policy_list = inference if isinstance(inference, list) else [inference]
-#         titles = policy_list
-
-#     cmap = cm.get_cmap("viridis")  # perceptually uniform
-
-#     fig, axes = plt.subplots(1, len(policy_list), figsize=figsize, sharey=True)
-#     if len(policy_list) == 1:
-#         axes = [axes]
-
-#     for i, name in enumerate(policy_list):
-#         ax = axes[i]
-
-#         # --- inference code --------------------------------------
-#         if name == "DCMAC":
-#             agent = AgentInference(name, env)
-#             checkpoint_path, episode = get_trained_agent_dir()
-#             agent.load_weights(checkpoint_path, episode)
-#         else:
-#             agent = HeuristicInference(name=name, env=env)
-
-#         agent.get_n_rollouts(n=n)
-#         losses      = agent.plotter.batch_losses
-#         resilience  = agent.plotter.batch_resilience
-#         quake_mags  = agent.plotter.batch_mags
-#         # ---------------------------------------------------------
-
-#         if not losses or not resilience or not quake_mags:
-#             print(f"Skipping '{name}' due to invalid data.")
-#             continue
-
-#         cal_vals = []
-#         mags = []
-#         for l, r, q in zip(losses, resilience, quake_mags):
-#             total = sum(l) + sum(r)
-#             if total > 0:
-#                 cal = sum(r) / total
-#                 cal_vals.append(cal)
-#                 mags.append(q)
-
-#         if not cal_vals or not mags:
-#             print(f"No valid CAL or magnitude data for '{name}'")
-#             continue
-
-#         # Define fixed bin edges for CAL and quake magnitude
-#         cal_bins = np.linspace(0, 1, bins + 1)
-
-#         mag_min, mag_max = np.floor(min(mags)), np.ceil(max(mags))
-#         mag_bins = np.arange(mag_min, mag_max + 0.5, 0.5)  # 0.5 step, inclusive
-
-#         # Create 2D histogram
-#         hist, xedges, yedges = np.histogram2d(cal_vals, mags,
-#                                               bins=[cal_bins, mag_bins])
-
-#         # Normalize by rollouts
-#         hist /= n
-
-#         # Plot
-#         mesh = ax.pcolormesh(xedges, yedges, hist.T, cmap=cmap,
-#                              shading='auto')
-#         cbar = fig.colorbar(mesh, ax=ax)
-#         cbar.set_label("Ratio to Rollouts")
-
-#         ax.set_xlabel("CAL")
-#         if i == 0:
-#             ax.set_ylabel("Earthquake Magnitude")
-#         ax.set_title(titles[i])
-#         ax.set_xlim(0, 1)
-
-#     fig.suptitle(
-#         rf"$\bf{{CAL\ Matrix}}$: CAL vs Quake Magnitude (0.5 steps), Normalized by {n} Rollouts, toy-city-{env.n_agents}",
-#         fontsize=14, fontfamily="serif"
-#     )
-#     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-
-#     if save_path:
-#         fig.savefig(save_path, dpi=300)
-
-#     plt.show()
-
-# plot_avoided_losses_matrix(inference="all", n=10)
 
 
-def plot_avoided_losses(inference="all", bins=20, n=10,
+def plot_avoided_losses(inference="all", bins=50, n=10,
                         figsize=(12, 10), save_path=None):
     """
-    Plots avoided‑loss (CAL) ratio distributions:
-      • Three subplots: histogram + KDE per policy
-      • Fourth subplot: KDE overlay of all policies
+    Plots cumulative-loss (CL) ratio distributions for any number of policies.
+     • One subplot per policy for its histogram + KDE.
+     • A final, separate subplot for the KDE overlay of all policies.
     """
+    # This setup allows the function to run standalone for testing
 
-    policy_list = ["random", "importance_based", "DCMAC"]
-    titles = ["Random",
-              "Importance Based",
-              "Deep Centralised Multi-Agent Actor-Critic (DCMAC)"]
-    if inference != "all":
-        if isinstance(inference, list):
-            policy_list = inference
-        else:
-            policy_list = [inference]
+    # --- Change 1: Create a robust mapping from policy name to title ---
+    # This prevents errors if policies are skipped or reordered.
+    policy_title_map = {
+        "random": "Random",
+        "importance_based": "IMPB ",
+        "DCMAC": "DCMAC",
+        "QMIX_PS": "QMIX_PS",
+        "VDN_PS": "VDN_PS"
+    }
 
-    cmap = cm.get_cmap("magma")
-    positions = np.linspace(0.25, 0.75, len(policy_list))
-    policy_colors = {n: cmap(p) for n, p in zip(policy_list, positions)}
+    if inference == "all":
+        policy_list = list(policy_title_map.keys())
+    else:
+        policy_list = [inference] if isinstance(inference, str) else inference
 
-    fig, axes = plt.subplots(2, 2, figsize=figsize)
-    axes = axes.flatten()
-    sns.set_style("whitegrid")
+    # Separate lists for magma and cividis policies
+    magma_policies = {"random", "importance_based"}
+    cividis_policies = [p for p in policy_list if p not in magma_policies]
+    magma_policies = [p for p in policy_list if p in magma_policies]
+
+    # Get colormaps
+    cmap_cividis = cm.get_cmap("cividis")
+    cmap_magma = cm.get_cmap("magma")
+
+    # Assign positions in the colormap
+    positions_cividis = np.linspace(0.25, 0.75, len(cividis_policies)) if cividis_policies else []
+    positions_magma = np.linspace(0.25, 0.75, len(magma_policies)) if magma_policies else []
+
+    # Create color mappings
+    policy_colors = {
+        **{name: cmap_cividis(p) for name, p in zip(cividis_policies, positions_cividis)},
+        **{name: cmap_magma(p) for name, p in zip(magma_policies, positions_magma)},
+    }
 
     all_ratios = {}
-    bins_range = np.linspace(0, 1, bins + 1)          # 0.0 → 1.0
-
-    for i, name in enumerate(policy_list):
-        ax = axes[i]
-
-        # --- inference code (unchanged) -------------------------------------
-        if name == "DCMAC":
+    # First pass: collect all valid ratios for bin range calculation
+    for name in policy_list:
+        print(f"Running inference for policy: {name}")
+        if name in ["DCMAC", "QMIX_PS", "VDN_PS"]:
             agent = AgentInference(name, env)
-            checkpoint_path, episode = get_trained_agent_dir()
+            checkpoint_path, episode = get_trained_agent_dir(name=name)
             agent.load_weights(checkpoint_path, episode)
         else:
             agent = HeuristicInference(name=name, env=env)
 
         agent.get_n_rollouts(n=n)
-        losses      = agent.plotter.batch_losses
-        resilience  = agent.plotter.batch_resilience
-        # --------------------------------------------------------------------
+        losses = agent.plotter.batch_losses
+        resilience = agent.plotter.batch_resilience
 
         if not losses or not resilience or len(losses) != len(resilience):
             print(f"Skipping '{name}' due to invalid rollout data.")
             continue
 
-        ratios = [sum(r) / (sum(l) + sum(r))
-                  for l, r in zip(losses, resilience)
-                  if (sum(l) + sum(r)) > 0]
-
-        if not ratios:
+        ratios = [-sum(l) for l, r in zip(losses, resilience) if (sum(l) + sum(r)) > 0]
+        if ratios:
+            all_ratios[name] = ratios
+        else:
             print(f"No valid data for '{name}'")
-            continue
 
-        all_ratios[name] = ratios
+    if not all_ratios:
+        print("No valid data across all policies.")
+        return
+
+    # Filter the policy list to only include those with data
+    active_policies = list(all_ratios.keys())
+    num_policies = len(active_policies)
+
+    # Determine global min and max for consistent bin ranges
+    all_values = [v for ratios in all_ratios.values() for v in ratios]
+    min_val, max_val = min(all_values), max(all_values)
+    bins_range = np.linspace(min_val, max_val, bins + 1)
+
+    # --- Change 2: Dynamically calculate grid size ---
+    # We need one plot for each policy, plus one for the KDE overlay.
+    total_plots = num_policies + 1
+    ncols = 2 # Let's keep 2 columns for a neat layout
+    nrows = math.ceil(total_plots / ncols)
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
+    axes = axes.flatten()
+    sns.set_style("whitegrid")
+
+    # Plot each individual histogram + KDE
+    for i, name in enumerate(active_policies):
+        ax = axes[i]
+        ratios = all_ratios[name]
         mean_val, std_val = np.mean(ratios), np.std(ratios)
 
-        sns.histplot(ratios,
-                     bins=bins_range,            # fixed 0–1 bins
-                     ax=ax, stat="density", kde=True,
-                     edgecolor="black",
-                     color=policy_colors[name],
-                     alpha=0.7)
-
-        ax.axvline(mean_val, color=policy_colors[name],
-                   linestyle="--", linewidth=1)
+        sns.histplot(ratios, bins=bins_range, ax=ax, stat="density", kde=True,
+                     edgecolor="black", color=policy_colors[name], alpha=0.7)
+        ax.axvline(mean_val, color=policy_colors[name], linestyle="--", linewidth=1)
 
         ymin, ymax = ax.get_ylim()
         ax.set_ylim(ymin, ymax * 1.1)
-        ax.set_xlim(0, 1)                       # <-- lock x‑axis 0–1
+        ax.set_xlim(min_val, max_val)
 
-        ax.text(mean_val, ymax * 1.05,
-                f"μ={mean_val:.2f}\nσ={std_val:.2f}",
+        ax.text(mean_val, ymax * 1.05, f"μ={mean_val:.2f}\nσ={std_val:.2f}",
                 ha="center", va="top", fontsize=9,
-                bbox=dict(boxstyle="round,pad=0.3",
-                          facecolor="white",
-                          edgecolor="gray", alpha=0.7))
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="gray", alpha=0.7))
 
-        ax.set_xlabel("CAL")
+        ax.set_xlabel("Losses")
         ax.set_ylabel("Density")
-        ax.set_title(titles[i])
+        ax.set_title(policy_title_map.get(name, name)) # Use the map for the title
 
-    # ---- Fourth subplot: KDE overlay ----------------------------------------
-    ax = axes[3]
+    # --- Change 3: Plot KDE overlay on the correct, dedicated subplot ---
+    kde_ax = axes[num_policies]
     for name, ratios in all_ratios.items():
-        sns.kdeplot(ratios, label=name, ax=ax,
-                    color=policy_colors[name],
-                    shade=True, alpha=0.5)
+        sns.kdeplot(ratios, label=policy_title_map.get(name, name), ax=kde_ax,
+                    color=policy_colors[name], fill=True, alpha=0.3)
 
-    ax.set_xlim(0, 1)                            # lock x‑axis 0–1
-    ax.set_xlabel("CAL")
-    ax.set_ylabel("Density")
-    ax.set_title("Policy‑wise Avoided Loss Ratio KDE")
-    ax.legend()
-    ax.grid(True, linestyle="--", alpha=0.6)
-    # -------------------------------------------------------------------------
+    kde_ax.set_xlim(min_val, max_val)
+    kde_ax.set_xlabel("Losses")
+    kde_ax.set_ylabel("Density")
+    kde_ax.set_title("Policy-wise Losses KDE")
+    kde_ax.legend()
+    kde_ax.grid(True, linestyle="--", alpha=0.6)
+
+    # --- Change 4: Hide any unused subplots for a clean look ---
+    for i in range(total_plots, len(axes)):
+        axes[i].axis('off')
 
     fig.suptitle(
-        r"$\bf{{Cumulative\ Avoided\ Losses\ (CAL)}}$"
+        r"$\bf{{Cumulative\ Losses\ (CL)}}$"
         f" Distributions per Policy, over {n} Rollouts, toy-city-{env.n_agents}",
         fontsize=14, fontfamily="serif"
     )
@@ -250,10 +220,6 @@ def plot_avoided_losses(inference="all", bins=20, n=10,
         fig.savefig(save_path, dpi=300)
 
     plt.show()
-
-
-
-
 # def plot_avoided_losses(env, inference="all", bins=20, n=10,
 #                              figsize=(14, 12), save_path=None):
 #     """
@@ -391,17 +357,160 @@ def plot_avoided_losses(inference="all", bins=20, n=10,
 #     plt.show()
 
 
+def plot_relative_performance(inference="all", n=10, figsize=(10, 6), save_path=None):
+    """
+    Plots relative performance ((x - H)/H * 100) of each policy compared to the 'importance_based' baseline.
+    Also shows the mean cumulative return per policy.
+    """
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    import pandas as pd
 
-# plot_avoided_losses(inference="all", n=500)
+    policy_title_map = {
+        "random": "Random",
+        "importance_based": "IMPB ",
+        "DCMAC": "DCMAC",
+        "QMIX_PS": "QMIX_PS",
+        "VDN_PS": "VDN_PS"
+    }
+
+    if inference == "all":
+        policy_list = list(policy_title_map.keys())
+    else:
+        policy_list = [inference] if isinstance(inference, str) else inference
+
+    # Colormap setup
+    magma_policies = {"random", "importance_based"}
+    cividis_policies = [p for p in policy_list if p not in magma_policies]
+    magma_policies = [p for p in policy_list if p in magma_policies]
+
+    cmap_cividis = cm.get_cmap("viridis")
+    cmap_magma = cm.get_cmap("magma")
+
+    positions_cividis = np.linspace(0.25, 0.75, len(cividis_policies)) if cividis_policies else []
+    positions_magma = np.linspace(0.25, 0.75, len(magma_policies)) if magma_policies else []
+
+    policy_colors = {
+        **{name: cmap_cividis(p) for name, p in zip(cividis_policies, positions_cividis)},
+        **{name: cmap_magma(p) for name, p in zip(magma_policies, positions_magma)},
+    }
+
+    # Collect returns
+    policy_returns = {}
+    for name in policy_list:
+        print(f"Evaluating policy: {name}")
+        if name in ["DCMAC", "QMIX_PS", "VDN_PS"]:
+            agent = AgentInference(name, env)
+            checkpoint_path, episode = get_trained_agent_dir(name=name)
+            agent.load_weights(checkpoint_path, episode)
+        else:
+            agent = HeuristicInference(name=name, env=env)
+
+        agent.get_n_rollouts(n=n)
+        losses = agent.plotter.batch_losses
+        resilience = agent.plotter.batch_resilience
+
+        if not losses or not resilience or len(losses) != len(resilience):
+            print(f"Skipping '{name}' due to invalid rollout data.")
+            continue
+        # print(losses)
+        returns = [-sum(l) for l, r in zip(losses, resilience) if (sum(l) + sum(r)) > 0]
+        if returns:
+            policy_returns[name] = returns
+        else:
+            print(f"No valid returns for {name}")
+
+    # Check baseline
+    if "importance_based" not in policy_returns:
+        print("Missing 'importance_based' baseline. Cannot compute relative performance.")
+        return
+
+    baseline_mean = np.mean(policy_returns["importance_based"])
+
+    # Prepare DataFrame for plotting
+    data = []
+    for i, (name, values) in enumerate(policy_returns.items()):
+        mean_return = np.mean(values)
+        rel_diff = ((mean_return - baseline_mean) / baseline_mean) * 100 if name != "importance_based" else 0
+        data.append({
+            "Policy": policy_title_map.get(name, name),
+            "Relative (%)": rel_diff,
+            "Mean Return": mean_return,
+            "Color": policy_colors[name]
+        })
+
+    df = pd.DataFrame(data)
+    df = df[df["Policy"] != policy_title_map["importance_based"]]  # Exclude baseline from bars
+    df.sort_values("Relative (%)", inplace=True)
+
+    # Plotting
+    sns.set(style="whitegrid", font_scale=1.1)
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Build data with min/max/mean relative returns
+    summary = []
+    for i, (name, values) in enumerate(policy_returns.items()):
+        if name == "importance_based":
+            continue
+        rel_values = [((v - baseline_mean) / baseline_mean) * 100 for v in values]
+        summary.append({
+            "Policy": policy_title_map.get(name, name),
+            "Min": np.min(rel_values),
+            "Max": np.max(rel_values),
+            "Mean": np.mean(rel_values),
+            "Color": policy_colors[name]
+        })
+
+    df = pd.DataFrame(summary)
+    df.sort_values("Mean", inplace=True)
+
+    y_positions = np.arange(len(df))
+    bar_height = 0.6
+
+    for i, row in df.iterrows():
+        # Draw range bar
+        ax.barh(
+            y=y_positions[i],
+            width=row["Max"] - row["Min"],
+            left=row["Min"],
+            height=bar_height,
+            color=row["Color"],
+            edgecolor="black"
+        )
+        # Draw vertical line at the mean
+        ax.plot(
+            [row["Mean"], row["Mean"]],
+            [y_positions[i] - bar_height / 2, y_positions[i] + bar_height / 2],
+            color="black",
+            linewidth=2,
+        )
+
+    ax.set_yticks(y_positions)
+    ax.set_yticklabels(df["Policy"])
+    ax.axvline(0, color="gray", linestyle="--", linewidth=1)
+    ax.set_title("Relative Performance vs IMPB", fontsize=14, fontweight="bold")
+    ax.set_xlabel("Normalised Relative Returns (x-H)/H")
+    ax.set_ylabel("")
+    ax.set_xlim(-100, 100)
+
+    plt.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=300)
+    plt.show()
+# agent.run_n(2)
+# plot_avoided_losses(inference=["random", "importance_based", "DCMAC"], n=1000)
+# plot_relative_performance(inference=["random", "importance_based", "DCMAC"], n=1000, figsize=(12, 8))
 
 def plot_single_rollout(inference="all", plot_components=True):
     if inference == "all":
-        policy_list = ["random", "importance_based", "DCMAC"]
+        policy_list = ["random", "importance_based", "DCMAC", "QMIX_PS"]
+    elif isinstance(inference, list):
+        policy_list = inference
     else:
         policy_list = [inference]
 
     for name in policy_list:
-        if name == "DCMAC":
+        if name in ["DCMAC", "QMIX_PS"]:
             agent = AgentInference(name, env)
             checkpoint_path, episode = get_trained_agent_dir()
             # checkpoint_path = r"C:\Users\Anton\OneDrive\Desktop\tudelft_thesis\qres_marl\wandb\v8-cal-loss-reward-env-fixed\files"
@@ -410,13 +519,13 @@ def plot_single_rollout(inference="all", plot_components=True):
         else:
             agent = HeuristicInference(name=name, env=env)
 
-        agent.get_rollout()
+        agent.get_rollout(save=True)
         agent.plot_rollout(figsize=(20,10), plot_econ_traffic=True, plot_delay=True,
     plot_econ_relocation=True)
         if plot_components:
             agent.plot_components(figsize=(20,20))
 
-plot_single_rollout(inference="DCMAC", plot_components=True )
+plot_single_rollout(inference="DCMAC", plot_components=True)
 
 
 if save_env_config:

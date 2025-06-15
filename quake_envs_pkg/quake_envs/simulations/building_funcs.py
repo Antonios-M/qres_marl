@@ -593,37 +593,43 @@ def calculate_debris_geometries(
     # Return final GeoDataFrame in EPSG:4326
     return gdf_3857.to_crs(epsg=4326)
 
-def get_structural_repair_costs(
+def get_structural_repair_cost(
     occ_type: str,
     num_stories: int,
-    damage_state_probs: np.array,
-    sqft: float
+    sqft: float,
+    damage_state_probs: np.array=np.array([1.0, 0.0, 0.0, 0.0, 0.0]),
+    bldg_repl_cost: float = None
 ) -> float:
     """
     Equation 11-1 from HAZUS MR4 Technical Manual, Chapter 11: Earthquake Model.
     """
-    bldg_replacement_cost_model = BuildingReplacementCosts()
-    bldg_replacement_cost = bldg_replacement_cost_model.get_costs(occ_type, num_stories)
-
-    structural_repair_cost_ratios_model = StructuralRepairCostRatios()
-    structural_repair_cost_ratios = 0.1 * structural_repair_cost_ratios_model.get_repair_costs(occ_type)
-
-    structural_costs_per_sqft = int(np.sum(
-        structural_repair_cost_ratios * (
-            np.sum(damage_state_probs * bldg_replacement_cost)
+    if bldg_repl_cost is None:
+        bldg_replacement_cost_model = BuildingReplacementCosts()
+        bldg_replacement_cost = bldg_replacement_cost_model.get_costs(occupancy_type=occ_type, num_stories=num_stories, sqft=sqft)
+        return bldg_replacement_cost
+    else:
+        bldg_replacement_cost = bldg_repl_cost
+        structural_repair_cost_ratios_model = StructuralRepairCostRatios()
+        structural_repair_cost_ratios = (structural_repair_cost_ratios_model.get_repair_cost_ratios(occ_type) / 100)
+        # print(f"damage state probs: {damage_state_probs}")
+        # print(f"structural repair cost ratios: {structural_repair_cost_ratios}")
+        # print(f"bldg replacement cost: {bldg_replacement_cost}")
+        # print(f"sum of products: {np.sum(damage_state_probs[1:] * structural_repair_cost_ratios)}")
+        struct_rep_cost = int(bldg_replacement_cost * np.sum(
+                damage_state_probs[1:] * structural_repair_cost_ratios
+            )
         )
-    ))
-
-    structural_costs = math.ceil(structural_costs_per_sqft * sqft)
-
-    return structural_costs
+        # print(f"structural repair cost: {struct_rep_cost}")
+        # print(f"bldg replacement cost: {bldg_replacement_cost}")
+        return struct_rep_cost
 
 def get_income_loss(
     occ_type: str,
     sqft: float,
-    damage_state_probs: np.array,
-    repair_time: int
-) -> Tuple[int, int]:
+    repair_time: int=0,
+    damage_state_probs: np.array=np.array([1.0, 0.0, 0.0, 0.0, 0.0]),
+    max_income: int = None
+) -> int:
     """Calculate yearly income loss and maximum potential income for a building.
 
     This function implements equation 11-15 from:
@@ -672,25 +678,47 @@ def get_income_loss(
 
     # Calculate maximum potential yearly income (YMAX)
     YMAX = sqft * np.sum(income) * 365
+    YLOS = min(YMAX, YLOS)
 
 
-    return int(YLOS), int(YMAX)
+    return np.ceil(YLOS) if max_income is not None else np.ceil(YMAX)
 
 def get_relocation_cost(
     occtype: str,
     sqft: float,
-    damage_state_probs: np.array,
-):
-    # Initialize recovery data object to access building-specific parameters
+    damage_state_probs: np.array=np.array([1.0, 0.0, 0.0, 0.0, 0.0]),
+    max_reloc_cost: int = None
+) -> int:
+    """
+    Calculate relocation cost for a building, optionally capped at a maximum value.
+
+    Args:
+        occtype: Occupancy type of the building.
+        sqft: Total square footage.
+        damage_state_probs: Probabilities for different damage states.
+        max_reloc_cost: Maximum allowed relocation cost (optional).
+
+    Returns:
+        int: Final relocation cost, capped if max_reloc_cost is provided.
+    """
     recovery_building_data = BuildingRecoveryData()
 
-    relocation_cost = recovery_building_data.get_relocation_cost( ## cost per month
-        occupancy_type=occtype,
-        sqft=sqft,
-        damage_state_probs=damage_state_probs
-    )
-    # yearly_relocation_cost = (relocation_cost / 30) * 365
-    return relocation_cost
+    if max_reloc_cost is None:
+        relocation_cost = recovery_building_data.get_relocation_cost(
+            occupancy_type=occtype,
+            sqft=sqft,
+            damage_state_probs=np.array([0.0, 0.0, 0.0, 0.0, 1.0])
+        )
+
+    else:
+        relocation_cost = recovery_building_data.get_relocation_cost(
+            occupancy_type=occtype,
+            sqft=sqft,
+            damage_state_probs=damage_state_probs
+        )
+        relocation_cost = min(relocation_cost, max_reloc_cost)
+
+    return int(relocation_cost)
 
 def get_loss_of_function_time(
     occ_type: str,
@@ -1060,95 +1088,96 @@ class BuildingAction(Enum):
         return self.name.replace("_", " ").title()  # "REPAIR" -> "Minor Repair"
 
 
+
 class Building:
-    """
-    A class representing a building with a probability dist over damage states an
-    associated economic impacts after an earthquake.
-
-    The class initializes a building with given characteristics and calculates various
-    impact metrics based on damage state probabilities.
-
-    Attributes:
-        id (str): Unique identifier for the building (UUID)
-        damage_state_probs (np.array): Probability distribution of damage states
-            [none, slight, moderate, extensive, complete]
-        occtype (str): Occupancy type of the building
-        num_stories (int): Number of stories in the building
-        sqft (float): Total square footage of the building
-        action (None): Placeholder for future action assignments
-        damage_state (int): Sampled damage state based on probability distribution
-        initial_repair_time (float): Initially calculated repair time
-        current_repair_time (float): Remaining time needed for repairs
-        income_loss (float): Calculated income loss due to damage
-        max_income (float): Maximum potential income for the building
-        initial_structural_repair_cost (float): Time period during which building cannot function
-        initial_structural_repair_cost (float): Estimated costs for structural repairs
-    """
+    def __init_empty(self):
+        self.initial_damage_state = 0
+        self.current_damage_state = 0
+        self.initial_repair_time = 0
+        self.initial_structural_repair_cost = 0
+        self.current_structural_repair_cost = 0
+        self.initial_income_loss = 0
+        self.current_income = 0
+        self.initial_loss_of_function_time = 0
+        self.current_loss_of_function_time = 0
+        self.initial_relocation_cost = 0
+        self.current_relocation_cost = 0
 
     def __init__(
         self,
-        id: str,  # id for building identification
+        id: str,
         geometry: Polygon,
-        damage_state_probs: np.array,  # Damage state probabilities [0.1,0.2,0.5,0.05,0.05]
-        occtype: str,  # Occupancy type
-        str_type: str, # detailed (str_typ2) structure type see building_config.py
-        num_stories: int,  # Number of stories
-        sqft: float,  # Square footage
-        calc_debris: bool,
-        stoch_ds: bool,
-        stoch_rt: bool,
-        stoch_cost: bool,
-        stoch_inc_loss: bool,
-        stoch_loss_of_function: bool,
-        stoch_relocation_cost: bool,
-        is_essential: bool = False, # Essential Facility Designation, see HAZUS Equake Manual, 2024.
-        access_road_id: int = -1, # idx of road connected to building
+        occtype: str,
+        str_type: str,
+        num_stories: int,
+        sqft: float,
+        is_essential: bool = False,
+        access_road_id: int = -1,
         debris_capacity_reduction: float = 0.0,
-        trucks_per_day: int = 1.0,
-        time_step_duration: int = 7, ## duration of environment timestep in days
+        trucks_per_day: float = 1.0,
+        time_step_duration: int = 7,
         verbose: bool = True,
-        is_under_repair = False,
-
-    ) -> None:
-        """
-        Initialize a Building instance with given parameters and calculate impact metrics.
-
-        Args:
-            id: Unique identifier for the building
-            damage_state_probs: Array of probabilities for each damage state
-            occtype: Occupancy type of the building
-            num_stories: Number of stories in the building
-            sqft: Total square footage of the building
-        """
-        self.stoch_ds = stoch_ds
-        self.stoch_rt = stoch_rt
-        self.stoch_cost = stoch_cost
-        self.stoch_inc_loss = stoch_inc_loss
-        self.stoch_loss_of_function = stoch_loss_of_function
-        self.stoch_relocation_cost = stoch_relocation_cost
-        self.calc_debris = calc_debris
-        self.cost_decay = "quadratic"
-        # self.repair_decay = "linear"
-        # self.income_loss_decay = "linear"
-        self.income_loss_decay = "quadratic"
-
-        # Basic building characteristics
-        self.verbose = verbose
+        is_under_repair: bool = False,
+        stoch_ds: bool = False,
+        stoch_rt: bool = False,
+        calc_debris: bool = False,
+        stoch_cost: bool = False,
+        stoch_inc_loss: bool = False,
+        stoch_loss_of_function: bool = False,
+        stoch_relocation_cost: bool = False,
+        cost_decay: str = "quadratic",
+        income_loss_decay: str = "quadratic"
+    ):
         self.id = id
         self.geometry = geometry
         self.centroid = geometry.centroid
-
         self.occtype = occtype
+        self.str_type = str_type
         self.num_stories = num_stories
         self.sqft = sqft
         self.is_essential = is_essential
         self.access_road_id = access_road_id
-        self.is_under_repair = is_under_repair
+        self.debris_capacity_reduction = debris_capacity_reduction
         self.trucks_per_day = trucks_per_day
-        self.str_type = str_type
         self.time_step_duration = time_step_duration
+        self.verbose = verbose
+        self.is_under_repair = is_under_repair
+        self.stoch_ds = stoch_ds
+        self.stoch_rt = stoch_rt
+        self.calc_debris = calc_debris
+        self.stoch_cost = stoch_cost
+        self.stoch_inc_loss = stoch_inc_loss
+        self.stoch_loss_of_function = stoch_loss_of_function
+        self.stoch_relocation_cost = stoch_relocation_cost
+        self.cost_decay = cost_decay
+        self.income_loss_decay = income_loss_decay
+
         self.value = 0.0
-        # Sample initial damage state based on probability distribution
+
+        self.max_income = get_income_loss(
+            occ_type=self.occtype,
+            sqft=self.sqft
+        )
+        self.max_rep_cost = get_structural_repair_cost(
+            occ_type=self.occtype,
+            num_stories=self.num_stories,
+            sqft=self.sqft
+        )
+        self.max_reloc_cost = get_relocation_cost(
+            occtype=self.occtype,
+            sqft=self.sqft
+        )
+        if self.is_essential:
+            self.initial_critical_func = 1.0
+        else:
+            self.initial_critical_func = 0.0
+        self.current_critical_func = self.initial_critical_func
+        self.initial_beds = _get_hosp_beds(self.sqft, self.occtype)
+        self.initial_doctors = _get_num_doctors(self.sqft, self.occtype)
+        self.__init_empty()
+
+
+    def reset(self, damage_state_probs: np.array, debris_capacity_reduction: float):
 
         ## ---------------------Damage State---------------------
         if self.stoch_ds:
@@ -1205,11 +1234,12 @@ class Building:
 
         # repair cost / $
         if self.stoch_cost:
-            self.initial_structural_repair_cost = get_structural_repair_costs(
+            self.initial_structural_repair_cost = get_structural_repair_cost(
                 self.occtype,
                 self.num_stories,
+                self.sqft,
                 self.damage_state_probs,
-                self.sqft
+                self.max_rep_cost
             )
         else:
             self.initial_structural_repair_cost = self.initial_damage_state * 100000
@@ -1220,16 +1250,12 @@ class Building:
             self.current_structural_repair_cost = self.initial_structural_repair_cost
 
         ## ---------------------Functionality---------------------
-        self.initial_beds = _get_hosp_beds(self.sqft, self.occtype)
+
         self.current_beds = self.get_hosp_beds()
 
-        self.initial_doctors = _get_num_doctors(self.sqft, self.occtype)
         self.current_doctors = self.get_doctors()
 
-        if self.is_essential:
-            self.initial_critical_func = 1.0
-        else:
-            self.initial_critical_func = 0.0
+
         self.current_critical_func = self.get_critical_functionality()
 
         ## post-repair func. downtime
@@ -1248,11 +1274,12 @@ class Building:
         ## ---------------------Income/Costs---------------------
         ## income
         if self.stoch_inc_loss:
-            self.income_loss, self.max_income = get_income_loss(
+            self.income_loss = get_income_loss(
                 occ_type=self.occtype,
                 sqft=self.sqft,
                 damage_state_probs=self.damage_state_probs,
-                repair_time=self.current_repair_time
+                repair_time=self.current_repair_time,
+                max_income=self.max_income
             )
         else:
             self.max_income =  1.25 * ((self.sqft / 750) * 60000)
@@ -1270,7 +1297,8 @@ class Building:
             self.initial_relocation_cost = get_relocation_cost(
                 occtype=self.occtype,
                 sqft=self.sqft,
-                damage_state_probs=self.damage_state_probs
+                damage_state_probs=self.damage_state_probs,
+                max_reloc_cost=self.max_reloc_cost
             )
         else:
             self.initial_relocation_cost = self.max_income * 0.25
@@ -1346,6 +1374,8 @@ class Building:
             self.is_under_repair = False
             return info
 
+
+
         else:
             raise ValueError(f'Invalid action: {action}')
 
@@ -1384,7 +1414,8 @@ class Building:
             self.current_relocation_cost = get_relocation_cost(
                 occtype=self.occtype,
                 sqft=self.sqft,
-                damage_state_probs=damage_state_probs
+                damage_state_probs=damage_state_probs,
+                max_reloc_cost=self.max_reloc_cost
             )
         return self.current_relocation_cost
 
@@ -1494,6 +1525,7 @@ class Building:
             self.is_fully_repaired = True
             self.current_damage_state = 0
             self.time_step_after_repair = 0
+            self.current_relocation_cost = 0.0
             self.current_structural_repair_cost = 0
         else:
             self.__step_damage_state()
@@ -1558,6 +1590,26 @@ Building: {self.id}, occupancy: {self.occtype}, total area: {self.sqft} sqft
 7) Debris Cleanup Time: {self.debris_cleanup_time:,}
         """
 
+
+def reset_building_objects(
+    buildings_study_gdf: gpd.GeoDataFrame,
+    building_objs: List[Building]
+):
+    damage_state_probs = np.array([
+        buildings_study_gdf[StudyBuildingSchema.PLS0],
+        buildings_study_gdf[StudyBuildingSchema.PLS1],
+        buildings_study_gdf[StudyBuildingSchema.PLS2],
+        buildings_study_gdf[StudyBuildingSchema.PLS3],
+        buildings_study_gdf[StudyBuildingSchema.PLS4]
+    ]).T
+    for idx, row in buildings_study_gdf.iterrows():
+        building_objs[idx].reset(
+            damage_state_probs=damage_state_probs[idx],
+            debris_capacity_reduction=row[StudyBuildingSchema.CAPACITY_REDUCTION]
+        )
+
+    return building_objs
+
 def make_building_objects(
     buildings_study_gdf: gpd.GeoDataFrame,
     time_step_duration: int,
@@ -1577,26 +1629,17 @@ def make_building_objects(
 
 
     for idx, row in buildings_study_gdf.iterrows():
-        damage_state_probs = np.array([
-            row[StudyBuildingSchema.PLS0],
-            row[StudyBuildingSchema.PLS1],
-            row[StudyBuildingSchema.PLS2],
-            row[StudyBuildingSchema.PLS3],
-            row[StudyBuildingSchema.PLS4]
-        ])
 
         # print(row["geometry"])
         building_obj = Building(
             id=str(idx),
             geometry=row["geometry"],
-            damage_state_probs=damage_state_probs,
             occtype=row[StudyBuildingSchema.OCC_TYPE],
             str_type=row[StudyBuildingSchema.STR_TYP2],
             num_stories=row[StudyBuildingSchema.NO_STORIES],
             sqft=row[StudyBuildingSchema.SQ_FOOT],
             is_essential=row[StudyBuildingSchema.EFACILITY],
             access_road_id=row[StudyBuildingSchema.ACCESS_ROAD_IDX],
-            debris_capacity_reduction=row[StudyBuildingSchema.CAPACITY_REDUCTION],
             time_step_duration=time_step_duration,
             trucks_per_day=trucks_per_day,
             verbose=False,
@@ -1613,19 +1656,19 @@ def make_building_objects(
 
     return building_objs
 
-def map_buildings_objects(
-    buildings_study_gdf: gpd.GeoDataFrame,
-    building_objs: List[Building]
-) -> gpd.GeoDataFrame:
+# def map_buildings_objects(
+#     buildings_study_gdf: gpd.GeoDataFrame,
+#     building_objs: List[Building]
+# ) -> gpd.GeoDataFrame:
 
-    for building_obj in building_objs:
-        idx = building_obj.id
-        debris_capacity_reduction = building_obj.debris_capacity_reduction
-        damage_state = building_obj.damage_state
-        repair_time = building_obj.current_repair_time
+#     for building_obj in building_objs:
+#         idx = building_obj.id
+#         debris_capacity_reduction = building_obj.debris_capacity_reduction
+#         damage_state = building_obj.current_damage_state
+#         repair_time = building_obj.current_repair_time
 
-        buildings_study_gdf.loc[idx, StudyBuildingSchema.CAPACITY_REDUCTION] = debris_capacity_reduction
-        buildings_study_gdf.loc[idx, StudyBuildingSchema.DAMAGE_STATE] = damage_state
-        buildings_study_gdf.loc[idx, StudyBuildingSchema.CURR_REPAIR_TIME] = repair_time
+#         buildings_study_gdf.loc[idx, StudyBuildingSchema.CAPACITY_REDUCTION] = debris_capacity_reduction
+#         buildings_study_gdf.loc[idx, StudyBuildingSchema.DAMAGE_STATE] = damage_state
+#         buildings_study_gdf.loc[idx, StudyBuildingSchema.CURR_REPAIR_TIME] = repair_time
 
-    return buildings_study_gdf
+#     return buildings_study_gdf

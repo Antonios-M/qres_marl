@@ -33,15 +33,14 @@ register(
     entry_point="quake_envs.qres_env_wrapper:Qres_env_wrapper",
     kwargs={
         "verbose": False,
-        "time_step_duration": 150,
+        "time_step_duration": 30,
         "trucks_per_building_per_day": 0.1,
         "n_agents": 30,
         "n_crews": 10,
-        "time_horizon": 20,
-        "w_econ": 0.2,
-        "w_crit": 0.5,
-        "w_health": 0.5,
-        "quake_choices": [7.5, 8.0, 8.5]
+        "time_horizon": 100,
+        "w_econ": 0.5,
+        "w_crit": 0.3,
+        "w_health": 0.2
     }
 )
 
@@ -56,10 +55,9 @@ register(
         "n_agents": 4,
         "n_crews": 2,
         "time_horizon": 100,
-        "w_econ": 0.2,
-        "w_crit": 0.5,
-        "w_health": 0.3,
-        "quake_choices": [7.5, 8.0, 8.5]
+        "w_econ": 0.5,
+        "w_crit": 0.2,
+        "w_health": 0.3
     }
 )
 
@@ -73,10 +71,9 @@ register(
         "n_agents": 6000,
         "n_crews": 3000,
         "time_horizon": 50,
-        "w_econ": 0.2,
-        "w_crit": 0.5,
-        "w_health": 0.3,
-        "quake_choices": [7.5, 8.0, 8.5]
+        "w_econ": 0.5,
+        "w_crit": 0.3,
+        "w_health": 0.2
     }
 )
 

@@ -7,6 +7,7 @@ from .road_funcs import *
 from .utils import *
 from .interdep_network import *
 from .traffic_assignment import *
+from .psha import *
 import pandas as pd
 import geopandas as gpd
 import json
@@ -42,6 +43,7 @@ class Resilience:
         self.simulation = self.__init_simulation()
         self.num_buildings = self.simulation.num_buildings
         self.num_roads = self.simulation.num_roads
+        self.faults = gpd.read_file(PathUtils.faults)
 
 
         self.buildings_gdf = self.simulation.ds_to_int(
@@ -50,14 +52,31 @@ class Resilience:
         self.roads_gdf = self.simulation.ds_to_int(
             self.simulation.roads_study(), StudyRoadSchema.DAMAGE_STATE
         )
-        self.buildings_objs = None
-        self.road_objs = None
+        self.buildings_objs = make_building_objects(
+            buildings_study_gdf=self.simulation.buildings_study(),
+            time_step_duration=self.time_step_duration,
+            trucks_per_day=self.trucks_debris_per_day
+        )
+        self.road_objs = make_road_objects(
+            buildings=self.buildings_objs,
+            roads_study_gdf=self.simulation.roads_study(),
+            time_step_duration=self.time_step_duration,
+            traffic_net_df=self.simulation.curr_traffic_net_df
+        )
         min_road_rt, max_road_rt = get_road_obs_bounds()
         min_bldg_rt, max_bldg_rt = get_building_obs_bounds()
         self._max_obs = max(max_road_rt, max_bldg_rt)
-
-        # self.earthquake_choices = [7.5, 8.0, 8.5, 9.0]
+        # self.__init_psha()
         self.info = {}
+
+    def __init_psha(self):
+        centers = [self.buildings_objs[i].centroid for i in range(len(self.buildings_objs))] + [self.road_objs[i].centroid for i in range(len(self.road_objs))]
+        self.psha = SeismicSourceZone(
+            ucerf3=self.faults,
+            infrastructure_study_sites=centers,
+            event_rate_cols_prefix='M',
+            gmpe=BooreEtAl2014()
+        )
 
     def __init_simulation(self) -> InterdependentNetworkSimulation:
         env_data = PathUtils.env_data[str(self.n_agents)]
@@ -79,27 +98,41 @@ class Resilience:
             verbose=False
         )
         sim.buildings_study.get_debris()
+
         return sim
 
     def __simulate_earthquake(self):
+        # src_model = self.psha.select_seismic_source(return_period=self.return_period)
+        # site_wise_res = self.psha.attenuate(src_model)
+        # building_res = site_wise_res[:len(self.buildings_objs)]
+        # road_res = site_wise_res[len(self.buildings_objs):]
+        # print(f"Building res: {building_res}")
+        # print(f"Road res: {road_res}")
         eq_magnitude = self.eq_magnitude
+
         self.simulation.earthquake.predict_building_DS(
-            save_directory=PathUtils.earthquake_model_folder,
             use_saved_IMs=True,
+            save_directory=PathUtils.earthquake_model_folder,
             base_name=self.quake_IM_bldg_save_prefix,
             eq_magnitude=eq_magnitude
+            # use_psha=True,
+            # gms=building_res
         )
         self.simulation.earthquake.predict_road_DS(
-            save_directory=PathUtils.earthquake_model_folder,
             use_saved_IMs=True,
+            save_directory=PathUtils.earthquake_model_folder,
             base_name=self.quake_IM_road_save_prefix,
             eq_magnitude=eq_magnitude
+            # use_psha=True,
+            # gms=road_res
         )
         self.simulation.earthquake.predict_bridge_DS(
-            save_directory=PathUtils.earthquake_model_folder,
             use_saved_IMs=True,
+            save_directory=PathUtils.earthquake_model_folder,
             base_name=self.quake_IM_road_save_prefix,
             eq_magnitude=eq_magnitude
+            # use_psha=True,
+            # gms=road_res
         )
         self.building_gdf = self.simulation.buildings_study()
         self.roads_gdf = self.simulation.roads_study()
@@ -108,20 +141,14 @@ class Resilience:
             roads_study_gdf=self.roads_gdf,
             recalculate=True
         )
-        self.buildings_objs = make_building_objects(
+        self.buildings_objs = reset_building_objects(
             buildings_study_gdf=self.buildings_gdf,
-            time_step_duration=self.time_step_duration,
-            trucks_per_day=self.trucks_debris_per_day
+            building_objs=self.buildings_objs
         )
 
-        self.road_objs = make_road_objects(
+        self.road_objs = reset_road_objects(
             buildings=self.buildings_objs,
             roads_study_gdf=self.roads_gdf,
-            time_step_duration=self.time_step_duration,
-            traffic_net_df=self.simulation.curr_traffic_net_df
-        )
-        self.buildings_objs, self.road_objs = map_capacity_reduction_debris(
-            buildings=self.buildings_objs,
             roads=self.road_objs
         )
         self.simulation.traffic.step_traffic_calc_net(self.road_objs)
@@ -135,7 +162,6 @@ class Resilience:
         )
         if hasattr(self, 'initial_mtt'):
             MTT = max(MTT, self.initial_mtt)
-
         return MTT
 
     def __get_traffic_delay_cost(self) -> float:
@@ -177,10 +203,10 @@ class Resilience:
 
         return (rts, dss, rcs, crds, actions)
 
-
     def get_info(self):
         # print("--------")
-        # print("building repair: " + str([b.current_structural_repair_cost for b in self.buildings_objs]))
+        # rep_rpl = [(rep, repl) for rep, repl in zip([b.current_structural_repair_cost for b in self.buildings_objs], [b.max_rep_cost for b in self.buildings_objs])]
+        # print(f" Building repair-replaments: {rep_rpl}")
         ## building repair times
         # print([b.current_repair_time for b in self.buildings_objs])
         # ## road repair times
@@ -193,11 +219,17 @@ class Resilience:
         # print("relocation: " + str([b.get_relocation_cost() for b in self.buildings_objs]))
         info = {
             "income": sum([b.current_income for b in self.buildings_objs]),
-            "costs": {
-                "buildings_repair_cost":  - sum([b.current_structural_repair_cost for b in self.buildings_objs]),
-                "roads_repair_cost": - sum([r.current_repair_cost for r in self.road_objs]),
-                "traffic_delay_cost": - self.__get_traffic_delay_cost(),
-                "relocation_cost": - sum([b.get_relocation_cost() for b in self.buildings_objs])
+            "repair_costs": {
+                "bldg":  - sum([b.current_structural_repair_cost for b in self.buildings_objs]),
+                "road": - sum([r.current_repair_cost for r in self.road_objs]),
+                "reloc": - sum([b.get_relocation_cost() for b in self.buildings_objs]),
+                "traffic": - self.__get_traffic_delay_cost(),
+            },
+            "replacement_costs": {
+                "bldg": - sum([b.max_rep_cost for b in self.buildings_objs]),
+                "road": - sum([r.max_rep_cost for r in self.road_objs]),
+                "reloc": - sum([b.max_reloc_cost for b in self.buildings_objs]),
+                "traffic": - sum([b.max_income for b in self.buildings_objs])
             },
             "functionalities": {
                 "critical_functionality": sum([b.get_critical_functionality() for b in self.buildings_objs]),
@@ -228,12 +260,14 @@ class Resilience:
 
     def reset(
         self,
-        eq_magnitude: int
+        rp: int,
+        eq_magnitude: float
     ):
         self.time = 0
         self.simulation.traffic_calc_net.reset()
         self.initial_mtt = self.__get_mean_travel_time()
         self.current_mtt = self.initial_mtt
+        self.return_period = rp
         self.eq_magnitude = eq_magnitude
         self.__simulate_earthquake()
         # print(f"Log: Initial mean travel time: {self.initial_mtt}")
@@ -435,7 +469,8 @@ class Resilience:
                 "road_repairs": road_repairs_completed,
                 "bldg_debris": bldg_debris_cleared,
                 "bldg_funcs": bldg_funcs_restored
-            }
+            },
+            "actions": actions
         }
 
     @property
@@ -458,22 +493,24 @@ class Resilience:
         """
         info = self.get_info()
 
-        # Income term: normalized by initial income
-        curr_incom = info["income"]
         income_term = info["income"] / self.initial_income
 
         # Cost terms: each already negative in get_info, normalize by initial income
-        costs = info["costs"]
+        costs = info["repair_costs"]
+        max_costs = info["replacement_costs"]
         cost_terms = {
-            name: cost / self.initial_income
+            name: cost / max_costs[name]
             for name, cost in costs.items()
         }
+        q_econ = 0.5 * (income_term) + 0.5 * ( 1- (sum(costs.values()) / sum(max_costs.values())))
+
         # Assemble components
         components = {'income': income_term}
         components.update(cost_terms)
+        # print(f"components: {components}")
 
         return (
-            sum(components.values()),
+            q_econ,
             components
         )
 

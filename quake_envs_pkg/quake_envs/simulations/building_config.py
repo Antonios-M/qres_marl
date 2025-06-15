@@ -980,7 +980,7 @@ class BuildingReplacementCosts:
         ("EDU1", -1): 237.73,
         ("EDU2", -1): 197.10
     }
-    def get_costs(self, occupancy_type: str, num_stories: int = -1) -> Dict[str, float]:
+    def get_costs(self, occupancy_type: str,sqft: float, num_stories: int = -1) -> Dict[str, float]:
         """
         Retrieve the repair times for a specific occupancy type.
 
@@ -992,13 +992,13 @@ class BuildingReplacementCosts:
             return self.OCCUPANCIES[("RES1", num_stories)]
         elif (occupancy_type, -1) not in self.OCCUPANCIES:
             raise KeyError(f"{occupancy_type} not found in OCCUPANCIES")
-        return self.OCCUPANCIES[(occupancy_type, -1)]
+        return self.OCCUPANCIES[(occupancy_type, -1)] * sqft
 
 class StructuralRepairCostRatios:
     """
     Table 11-2 Structural Repair Costs
     """
-    COSTS: Dict[str, np.ndarray] = {
+    COSTS_RATIOS: Dict[str, np.ndarray] = {
         # (Occupancy Type): (Slight, Moderate, Extensive, Complete) as % of building replacement cost
         "RES1": np.array([0.5, 2.3, 11.7, 23.4]),
         "RES2": np.array([0.4, 2.4, 7.3, 24.4]),
@@ -1030,7 +1030,7 @@ class StructuralRepairCostRatios:
         "EDU2": np.array([0.2, 1.1, 5.5, 11.0])
     }
 
-    def get_repair_costs(self, occupancy_type: str) -> Tuple[float, float, float, float]:
+    def get_repair_cost_ratios(self, occupancy_type: str) -> Tuple[float, float, float, float]:
         """
         Retrieve the structural repair costs for a specific occupancy type.
 
@@ -1039,12 +1039,12 @@ class StructuralRepairCostRatios:
         :raises KeyError: If the occupancy type is not found in the repair cost data
         """
         if occupancy_type[:4] == "RES1":
-            return self.COSTS["RES1"]
+            return self.COSTS_RATIOS["RES1"]
         elif occupancy_type[:4] == "RES3":
-            return self.COSTS["RES3"]
-        elif occupancy_type not in self.COSTS:
+            return self.COSTS_RATIOS["RES3"]
+        elif occupancy_type not in self.COSTS_RATIOS:
             raise KeyError(f"{occupancy_type} not found in COSTS")
-        return self.COSTS[occupancy_type]
+        return self.COSTS_RATIOS[occupancy_type]
 
 class RecapturFactors:
     """
