@@ -501,9 +501,9 @@ class InterdependentNetworkSimulation:
                                     facecolor='orange', alpha=0.2, edgecolor='black',
                                     linewidth=0.5, linestyle=':', zorder=10
                                 )
-                                ax.add_patch(patch)
+                                # ax.add_patch(patch)
 
-        traffic_handle = traffic_roads.plot(ax=ax, color='darkred', linewidth=1.5, linestyle='--', label='Traffic Routes', zorder=20)
+        traffic_handle = traffic_roads.plot(ax=ax, color='darkred', linewidth=1.5, linestyle='--', label='Traffic Routes', zorder=20, alpha=0.4)
 
         road_handle = None
         for idx, row in roads.iterrows():
@@ -533,34 +533,34 @@ class InterdependentNetworkSimulation:
                            print(f"Warning: Could not get total_bounds for a GeoDataFrame: {e}")
 
 
-            # Handle debris geometry bounds separately
-            for gdf in gdf_list:
-                 # Check if it's the buildings GDF (or any GDF with debris_geom)
-                 if StudyBuildingSchema.DEBRIS_GEOM in gdf.columns:
-                    # Extract the column which might contain geometries or None
-                    debris_col = gdf[StudyBuildingSchema.DEBRIS_GEOM]
+            # # Handle debris geometry bounds separately
+            # for gdf in gdf_list:
+            #      # Check if it's the buildings GDF (or any GDF with debris_geom)
+            #      if StudyBuildingSchema.DEBRIS_GEOM in gdf.columns:
+            #         # Extract the column which might contain geometries or None
+            #         debris_col = gdf[StudyBuildingSchema.DEBRIS_GEOM]
 
-                    # Filter out None values before creating GeoSeries
-                    debris_geoms_only = debris_col.dropna()
+            #         # Filter out None values before creating GeoSeries
+            #         debris_geoms_only = debris_col.dropna()
 
-                    if not debris_geoms_only.empty:
-                        # Convert only the non-null geometries to a GeoSeries
-                        debris_geoseries = gpd.GeoSeries(debris_geoms_only)
+            #         if not debris_geoms_only.empty:
+            #             # Convert only the non-null geometries to a GeoSeries
+            #             debris_geoseries = gpd.GeoSeries(debris_geoms_only)
 
-                        # Create mask for valid and non-empty geometries within the GeoSeries
-                        valid_mask = debris_geoseries.is_valid & ~debris_geoseries.is_empty
+            #             # Create mask for valid and non-empty geometries within the GeoSeries
+            #             valid_mask = debris_geoseries.is_valid & ~debris_geoseries.is_empty
 
-                        # Filter the GeoSeries using the mask
-                        valid_debris_geoseries = debris_geoseries[valid_mask]
+            #             # Filter the GeoSeries using the mask
+            #             valid_debris_geoseries = debris_geoseries[valid_mask]
 
-                        # Check if any valid debris geometries remain
-                        if not valid_debris_geoseries.empty:
-                            try:
-                                    b = valid_debris_geoseries.total_bounds
-                                    if np.all(np.isfinite(b)):
-                                        all_bounds_arrays.append(b)
-                            except Exception as e:
-                                    print(f"Warning: Could not get total_bounds for debris geometries: {e}")
+            #             # Check if any valid debris geometries remain
+            #             if not valid_debris_geoseries.empty:
+            #                 try:
+            #                         b = valid_debris_geoseries.total_bounds
+            #                         if np.all(np.isfinite(b)):
+            #                             all_bounds_arrays.append(b)
+            #                 except Exception as e:
+            #                         print(f"Warning: Could not get total_bounds for debris geometries: {e}")
 
 
             if not all_bounds_arrays:
@@ -631,6 +631,14 @@ class InterdependentNetworkSimulation:
 
 
         # --- (Keep Road ID labeling logic as before) ---
+        for i, building in enumerate(buildings.iterrows()):
+            # print(building)
+            center = building[1]["geometry"].centroid
+            ax.text(
+                center.x, center.y, str(str(building[1][StudyBuildingSchema.OCC_TYPE]) + "_" + str(i)),
+                fontsize=10, color='black', ha='center', va='center', fontweight='bold', rotation=0
+            )
+
         if show_road_ids:
             for idx, row in roads.iterrows():
                 line = row.geometry
@@ -658,7 +666,7 @@ class InterdependentNetworkSimulation:
                                     if angle < -90: angle += 180
                         except Exception: pass
                         ax.text(
-                            midpoint.x, midpoint.y, label, fontsize=8, color='darkslateblue', ha='center', va='center',
+                            midpoint.x, midpoint.y, label, fontsize=12, color='darkslateblue', ha='center', va='center',
                             fontweight='normal', rotation=angle, rotation_mode='anchor',
                             bbox=dict(boxstyle="round,pad=0.2", facecolor='white', alpha=0.6, edgecolor='none'), zorder=25
                         )
@@ -679,14 +687,14 @@ class InterdependentNetworkSimulation:
                   break
         legend_handles.append(traffic_legend_handle)
 
-        if any(StudyBuildingSchema.DEBRIS_GEOM in gdf.columns and not gdf[gdf[StudyBuildingSchema.DEBRIS_GEOM].notna()].empty for gdf in [buildings]):
-             debris_patch = MplPolygon(
-                  [(0,0), (0,1), (1,1), (1,0)], facecolor='orange', alpha=0.2, edgecolor='black',
-                  linewidth=0.5, linestyle=':', label='Building Debris'
-             )
-             legend_handles.append(debris_patch)
+        # if any(StudyBuildingSchema.DEBRIS_GEOM in gdf.columns and not gdf[gdf[StudyBuildingSchema.DEBRIS_GEOM].notna()].empty for gdf in [buildings]):
+        #      debris_patch = MplPolygon(
+        #           [(0,0), (0,1), (1,1), (1,0)], facecolor='orange', alpha=0.2, edgecolor='black',
+        #           linewidth=0.5, linestyle=':', label='Building Debris'
+        #      )
+        #      legend_handles.append(debris_patch)
 
-        ax.legend(handles=legend_handles, loc='best', fontsize=10, frameon=True, edgecolor='black', ncol=1)
+        ax.legend(handles=legend_handles, loc='lower center', fontsize=10, frameon=True, edgecolor='black', ncol=1)
         ax.grid(True, linestyle=':', linewidth=0.5, color='gray', alpha=0.7)
         ax.set_xticks([])
         ax.set_yticks([])

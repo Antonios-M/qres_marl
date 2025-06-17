@@ -48,7 +48,7 @@ v9_loss_reward = "v9-30-loss-reward-DCMAC" #99999
 env = env_30
 
 # env.resilience.simulation.viz_environment(plot_name="test")
-def get_trained_agent_dir(name=None,v=v9_loss_reward, env=env_30, checkpt=45000):
+def get_trained_agent_dir(name=None,v=v9_loss_reward, env=env_30, checkpt=99999):
     error = False
     if name == "DCMAC":
         if env.n_agents == 4:
@@ -141,7 +141,20 @@ def plot_avoided_losses(inference="all", bins=50, n=10,
             print(f"Skipping '{name}' due to invalid rollout data.")
             continue
 
-        ratios = [-sum(l) for l, r in zip(losses, resilience) if (sum(l) + sum(r)) > 0]
+        # ratios = [-sum(l) for l, r in zip(losses, resilience) if (sum(l) + sum(r)) > 0]
+        def partial_resilience_loss(l, threshold_ratio=0.50):
+            if not l:
+                return 0
+
+            first_value = l[0]
+            for i, val in enumerate(l):
+                if val >= first_value * threshold_ratio:
+                    return sum(l[:i + 1])
+            return sum(l)  # If no value meets threshold, return full sum
+
+        ratios = [-partial_resilience_loss(l) for l, r in zip(losses, resilience) if (sum(l) + sum(r)) > 0]
+
+
         if ratios:
             all_ratios[name] = ratios
         else:
@@ -210,10 +223,11 @@ def plot_avoided_losses(inference="all", bins=50, n=10,
         axes[i].axis('off')
 
     fig.suptitle(
-        r"$\bf{{Cumulative\ Losses\ (CL)}}$"
-        f" Distributions per Policy, over {n} Rollouts, toy-city-{env.n_agents}",
-        fontsize=14, fontfamily="serif"
+        f"$\\bf{{70\\%\\ Recovery\\ Cumulative\\ Losses\\ (CL-70)}}$ "
+        f"Distributions per Policy, over {n} Rollouts, toy-city-{env.n_agents}",
+        fontsize=20, fontfamily="serif"
     )
+
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
     if save_path:
@@ -498,7 +512,7 @@ def plot_relative_performance(inference="all", n=10, figsize=(10, 6), save_path=
         fig.savefig(save_path, dpi=300)
     plt.show()
 # agent.run_n(2)
-# plot_avoided_losses(inference=["random", "importance_based", "DCMAC"], n=1000)
+# plot_avoided_losses(inference=["random", "importance_based", "DCMAC", "QMIX_PS", "VDN_PS"], n=1000)
 # plot_relative_performance(inference=["random", "importance_based", "DCMAC"], n=1000, figsize=(12, 8))
 
 def plot_single_rollout(inference="all", plot_components=True):
@@ -525,7 +539,7 @@ def plot_single_rollout(inference="all", plot_components=True):
         if plot_components:
             agent.plot_components(figsize=(20,20))
 
-plot_single_rollout(inference="DCMAC", plot_components=True)
+plot_single_rollout(inference="importance_based", plot_components=True)
 
 
 if save_env_config:
