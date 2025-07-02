@@ -1,24 +1,21 @@
 <p align="center">
   <a href="https://pytorch.org/">
-    <img src="https://raw.githubusercontent.com/pytorch/pytorch/main/docs/source/_static/img/pytorch-logo-dark.svg" alt="PyTorch" width="40" />
-  </a>
-  <a href="https://gymnasium.farama.org/">
-    <img src="https://raw.githubusercontent.com/Farama-Foundation/Gymnasium/main/docs/_static/logo.png" alt="Gymnasium" width="40" />
-  </a>
-  <a href="https://numpy.org/">
-    <img src="https://numpy.org/images/logo.svg" alt="NumPy" width="40" />
+    <img src="https://raw.githubusercontent.com/pytorch/pytorch/main/docs/source/_static/img/pytorch-logo-dark.svg" alt="PyTorch" width="50" />
   </a>
   <a href="https://networkx.org/">
-    <img src="https://networkx.org/_static/networkx-logo-white.png" alt="NetworkX" width="40" />
+    <img src="https://img.shields.io/badge/NetworkX-Python-blue?style=for-the-badge&logo=python&logoColor=white" alt="NetworkX" />
+  </a>
+  <a href="https://gymnasium.farama.org/">
+    <img src="https://raw.githubusercontent.com/Farama-Foundation/Gymnasium/main/docs/_static/logo.png" alt="Gymnasium" width="50" />
+  </a>
+  <a href="https://numpy.org/">
+    <img src="https://img.shields.io/badge/NumPy-013243?style=for-the-badge&logo=numpy&logoColor=white" alt="NumPy" />
   </a>
   <a href="https://geopandas.org/">
-    <img src="https://geopandas.org/_static/logo_by_logoipsum.png" alt="GeoPandas" width="40" />
+    <img src="https://img.shields.io/badge/GeoPandas-Python-blue?style=for-the-badge&logo=python&logoColor=white" alt="GeoPandas" />
   </a>
-  <a href="https://osmnx.readthedocs.io/en/stable/">
-    <img src="https://osmnx.readthedocs.io/en/stable/_static/osmnx-logo.svg" alt="OSMnx" width="40" />
-  </a>
-  <a href="https://geopy.readthedocs.io/">
-    <img src="https://geopy.readthedocs.io/en/stable/_static/geopy-logo.png" alt="GeoPy" width="40" />
+  <a href="https://github.com/gboeing/osmnx">
+    <img src="https://img.shields.io/badge/osmnx-Python-blue?style=for-the-badge&logo=python&logoColor=white" alt="osmnx" />
   </a>
 </p>
 
