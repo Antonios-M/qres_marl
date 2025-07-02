@@ -1,3 +1,27 @@
+<p align="center">
+  <a href="https://pytorch.org/">
+    <img src="https://raw.githubusercontent.com/pytorch/pytorch/main/docs/source/_static/img/pytorch-logo-dark.svg" alt="PyTorch" width="40" />
+  </a>
+  <a href="https://gymnasium.farama.org/">
+    <img src="https://raw.githubusercontent.com/Farama-Foundation/Gymnasium/main/docs/_static/logo.png" alt="Gymnasium" width="40" />
+  </a>
+  <a href="https://numpy.org/">
+    <img src="https://numpy.org/images/logo.svg" alt="NumPy" width="40" />
+  </a>
+  <a href="https://networkx.org/">
+    <img src="https://networkx.org/_static/networkx-logo-white.png" alt="NetworkX" width="40" />
+  </a>
+  <a href="https://geopandas.org/">
+    <img src="https://geopandas.org/_static/logo_by_logoipsum.png" alt="GeoPandas" width="40" />
+  </a>
+  <a href="https://osmnx.readthedocs.io/en/stable/">
+    <img src="https://osmnx.readthedocs.io/en/stable/_static/osmnx-logo.svg" alt="OSMnx" width="40" />
+  </a>
+  <a href="https://geopy.readthedocs.io/">
+    <img src="https://geopy.readthedocs.io/en/stable/_static/geopy-logo.png" alt="GeoPy" width="40" />
+  </a>
+</p>
+
 # QRES-MARL: A Resilience-Based Multi-Agent Reinforcement Learning Framework for Post-Earthquake Recovery of Interdependent Infrastructures
 
 This repository provides means for analysing existing or custom infrastructure testbeds, predicting income losses, relocation costs, traffic delay costs and repair costs and uses MARL for finding near-optimal post-earthquake recovery strategies. The methods used to model and create testbeds as well as predict losses are novel, while the code for RL training is a minimally adapted version of Prateek Bhustali's IMPRL repository (see references). Testbeds are generated using INCORE's [https://incore.ncsa.illinois.edu/doc/pyincore/] data schemas with data from  NBI (National Bridge Inventory), NSI (National Structures Inventory) and OSM. Costs and losses are calculated using various methods from HAZUS and FHWA and other sources which are cited locally; these can be found in _quake_envs_pkg\quake_envs\simulations\_
