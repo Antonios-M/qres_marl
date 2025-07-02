@@ -27,7 +27,11 @@ The work was developed as part of my MSc Thesis in TU Delft and is intended for 
 
 ---
 
+<<<<<<< HEAD
 # How to use
+=======
+# How to Use
+>>>>>>> a42befcf8571b3672b5f48c197b5efb0e04fc5bb
 
 1. **Clone the repository**
 
@@ -36,7 +40,11 @@ The work was developed as part of my MSc Thesis in TU Delft and is intended for 
    cd qres_mar
    ```
 
+<<<<<<< HEAD
 2. **Set up the Conda environment**
+=======
+2. **Set up the Conda environment**  
+>>>>>>> a42befcf8571b3672b5f48c197b5efb0e04fc5bb
    Make sure you have Conda installed, then create the environment using the `conda_env.yml` located in the **parent folder**:
 
    ```bash
@@ -52,13 +60,23 @@ The work was developed as part of my MSc Thesis in TU Delft and is intended for 
    Navigate to the `imprl-infinite-horizon/examples` directory and run the appropriate script:
 
    - Run **inference** (requires saved trained agents .pth files at wandb/):
+<<<<<<< HEAD
 
+=======
+   
+   Navigate to the `imprl-infinite-horizon/examples` directory and run the appropriate script:
+
+   - Run **inference** (requires saved trained agents .pth files at wandb/):
+>>>>>>> a42befcf8571b3672b5f48c197b5efb0e04fc5bb
      ```bash
      python imprl-infinite-horizon/examples/inference.py
      ```
 
    - Test basic **training**:
+<<<<<<< HEAD
 
+=======
+>>>>>>> a42befcf8571b3672b5f48c197b5efb0e04fc5bb
      ```bash
      python imprl-infinite-horizon/examples/train.py
      ```
@@ -89,7 +107,10 @@ The work was developed as part of my MSc Thesis in TU Delft and is intended for 
 ## Methodology
 
 ![method_workflow_overview](https://github.com/user-attachments/assets/f3156b0d-3492-45de-b9a7-066cc4227bd4)
+<<<<<<< HEAD
 
+=======
+>>>>>>> a42befcf8571b3672b5f48c197b5efb0e04fc5bb
 # References
 
 Code used for RL training is located in _imprl-infinite-horizon/_ and is a minimally adapted version of Prateek Bhustali's repository for RL in Inspection and Maintenance Planning:
