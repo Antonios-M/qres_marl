@@ -1,0 +1,110 @@
+k_out_of_n:
+    hard-1-of-5:
+        FailureReplace: 
+            mean: 1503.9
+            stderr: 4.3
+        TPI-CBM: 
+            mean: 1485.74
+            stderr: 4.3
+            policy: 147
+
+    hard-2-of-5:
+        FailureReplace: 
+            mean: 1502.8
+            stderr: 4.4
+        TPI-CBM: 
+            mean: 1498.8
+            stderr: 4.4
+            policy: 148
+        
+    hard-3-of-5:
+        FailureReplace: 
+            mean: 1658
+            stderr: 7.2
+        TPI-CBM: 
+            mean: 1654.19
+            stderr: 7.2
+            policy: 147
+
+    hard-4-of-5:
+        FailureReplace: 
+            mean: 4040.2
+            stderr: 22.2
+        TPI-CBM: 
+            mean: 3998.41
+            stderr: 22.2
+            policy: 149
+
+    hard-5-of-5:
+        FailureReplace:     
+            mean: 23825.1
+            stderr: 50.3 
+        TPI-CBM: 
+            mean: 19728.42
+            stderr: 48.7
+            policy: 14
+
+k_out_of_n_v3:
+    hard-1-of-3_v3:
+        FailureReplace: 
+            mean: 732.418
+        SARSOP: 
+            mean: 155.849
+
+    hard-2-of-3_v3:
+        FailureReplace: 
+            mean: 917.17
+        SARSOP: 
+            mean: 409.706
+
+    hard-3-of-3_v3:
+        FailureReplace: 
+            mean: 2759.427
+        SARSOP: 
+            mean: 1101.56
+
+k_out_of_n_infinite:
+
+    hard-1-of-4_infinite:
+        DoNothing: 
+            mean: 222.23
+        FailureReplace: 
+            mean: 340.65
+        SARSOP:
+            mean: 50.266
+            95_ci: [48.916, 51.763]
+            LBound: 43.6696
+            UBound: 51.8249
+
+    hard-2-of-4_infinite:
+        DoNothing: 
+            mean: 640.79
+        FailureReplace: 
+            mean: 357.91
+        SARSOP:
+            mean: 138.045
+            95_ci: [135.726, 140.465]
+            LBound: 113.191
+            UBound: 141.758
+
+    hard-3-of-4_infinite:
+        DoNothing: 
+            mean: 1231.83
+        FailureReplace: 
+            mean: 550.37
+        SARSOP:
+            mean: 305.365
+            95_ci: [301.522, 309.501]
+            LBound: 272.843
+            UBound: 309.061
+
+    hard-4-of-4_infinite:
+        DoNothing: 
+            mean: 2039.27
+        FailureReplace: 
+            mean: 1494.49
+        SARSOP:
+            mean: 743.609
+            95_ci: [737.09, 750.391]
+            LBound: 727.363
+            UBound: 755.521
