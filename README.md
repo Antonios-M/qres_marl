@@ -22,8 +22,12 @@ The work was developed as part of my MSc Thesis in TU Delft and is intended for 
    conda activate qres_marl
    ```
 
-3. **Run inference or training**
 
+3. **Run inference or training**
+   To run inference or training you need saved testbed GeoJSON files for buildings, roads and traffic data. For storing these files see _quake_envs_pkg\quake_envs\simulations\utils.py_.
+   Building and Road GeoJSON files should follow the INCORE data schemas [https://incore.ncsa.illinois.edu/doc/pyincore/], traffic csv network and demand files should follow TNTP data
+   schemas from [https://github.com/bstabler/TransportationNetworks].
+   
    Navigate to the `imprl-infinite-horizon/examples` directory and run the appropriate script:
 
    - Run **inference** (requires saved trained agents .pth files at wandb/):
