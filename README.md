@@ -1,12 +1,12 @@
 <p align="center">
   <a href="https://pytorch.org/">
-    <img src="https://raw.githubusercontent.com/pytorch/pytorch/main/docs/source/_static/img/pytorch-logo-dark.svg" alt="PyTorch" width="50" />
+    <img src="https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=pytorch&logoColor=white" alt="PyTorch" />
   </a>
   <a href="https://networkx.org/">
     <img src="https://img.shields.io/badge/NetworkX-Python-blue?style=for-the-badge&logo=python&logoColor=white" alt="NetworkX" />
   </a>
   <a href="https://gymnasium.farama.org/">
-    <img src="https://raw.githubusercontent.com/Farama-Foundation/Gymnasium/main/docs/_static/logo.png" alt="Gymnasium" width="50" />
+    <img src="https://img.shields.io/badge/Gymnasium-40c4ff?style=for-the-badge&logo=python&logoColor=white" alt="Gymnasium" />
   </a>
   <a href="https://numpy.org/">
     <img src="https://img.shields.io/badge/NumPy-013243?style=for-the-badge&logo=numpy&logoColor=white" alt="NumPy" />
