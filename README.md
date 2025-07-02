@@ -13,8 +13,13 @@ The work was developed as part of my MSc Thesis in TU Delft and is intended for 
 ## Seismic Hazard
 ![method_community_robustness](https://github.com/user-attachments/assets/31bac2b5-2efb-4332-be2a-6bfe2fac7306)
 
+## Fragility Curves
+![frag_curves](https://github.com/user-attachments/assets/18a72b28-dffd-4d56-b921-0f5140527b39)
+
+
 ## Methodology
-![method_environment_dynamics](https://github.com/user-attachments/assets/ea4e3735-a160-4691-821b-6329f085dce9)
+![method_workflow_overview](https://github.com/user-attachments/assets/f3156b0d-3492-45de-b9a7-066cc4227bd4)
+
 
 
 # References
