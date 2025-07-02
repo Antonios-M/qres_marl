@@ -4,6 +4,18 @@ This repository provides means for analysing existing or custom infrastructure t
 
 The work was developed as part of my MSc Thesis in TU Delft and is intended for further use and developement in simillar research applications. Trained agent data on the testbeds used can be provided upon request. View the full pdf manuscript at [https://jmp.sh/k2yp2uBs]
 
+## Results
+![res_final](https://github.com/user-attachments/assets/45879e2e-d003-478f-94d2-47975bb23fc5)
+
+## Reward Function
+![method_reward_3](https://github.com/user-attachments/assets/93ebd24b-276c-4d0c-8e55-1e83cda12389)
+
+## Seismic Hazard
+![method_community_robustness](https://github.com/user-attachments/assets/31bac2b5-2efb-4332-be2a-6bfe2fac7306)
+
+## Methodology
+![method_environment_dynamics](https://github.com/user-attachments/assets/ea4e3735-a160-4691-821b-6329f085dce9)
+
 
 # References
 
