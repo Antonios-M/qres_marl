@@ -17,7 +17,7 @@ The work was developed as part of my MSc Thesis in TU Delft and is intended for 
 
    ```bash
    conda env create -f ../conda_env.yml
-   conda activate qres_env  # Replace with the environment name in the YAML file if different
+   conda activate qres_marl
    ```
 
 3. **Run inference or training**
