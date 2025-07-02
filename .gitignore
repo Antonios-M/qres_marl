@@ -4,7 +4,7 @@ imprl/
 wandb/
 wandb/
 conda_env/
-imprl-infinite-horizon/example/data/
+imprl-infinite-horizon/examples/data/
 quake_envs_pkg/quake_envs/__pycache__/
 quake_envs_pkg/quake_envs/tests/
 quake_envs_pkg/quake_envs/simulations/_pycache__/
