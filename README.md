@@ -4,6 +4,43 @@ This repository provides means for analysing existing or custom infrastructure t
 
 The work was developed as part of my MSc Thesis in TU Delft and is intended for further use and developement in simillar research applications. Trained agent data on the testbeds used can be provided upon request. View the full pdf manuscript at [https://jmp.sh/k2yp2uBs]
 
+# How to use
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/Antonios-M/qres_mar.git
+   cd qres_mar
+   ```
+
+2. **Set up the Conda environment**  
+   Make sure you have Conda installed, then create the environment using the `conda_env.yml` located in the **parent folder**:
+
+   ```bash
+   conda env create -f ../conda_env.yml
+   conda activate qres_env  # Replace with the environment name in the YAML file if different
+   ```
+
+3. **Run inference or training**
+
+   Navigate to the `imprl-infinite-horizon/examples` directory and run the appropriate script:
+
+   - Run **inference** (requires saved trained agents .pth files at wandb/):
+     ```bash
+     python imprl-infinite-horizon/examples/inference.py
+     ```
+
+   - Test basic **training**:
+     ```bash
+     python imprl-infinite-horizon/examples/train.py
+     ```
+
+   - Run **training with logging** using Weights & Biases:
+     ```bash
+     python imprl-infinite-horizon/examples/train_and_log_parallel.py
+     ```
+
+---
+
 ## Results
 ![res_final](https://github.com/user-attachments/assets/45879e2e-d003-478f-94d2-47975bb23fc5)
 
