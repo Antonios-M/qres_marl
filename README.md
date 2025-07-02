@@ -4,6 +4,8 @@ This repository provides means for analysing existing or custom infrastructure t
 
 The work was developed as part of my MSc Thesis in TU Delft and is intended for further use and developement in simillar research applications. Trained agent data on the testbeds used can be provided upon request. View the full pdf manuscript at [https://jmp.sh/k2yp2uBs]
 
+---
+
 # How to use
 1. **Clone the repository**
 
