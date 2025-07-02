@@ -764,23 +764,6 @@ def get_debris_cleanup_time(
     travel_time_to_temp_depot: float = 2,  # travel time to temporary disposal in hours
     working_hours_per_day: int = 8
 ) -> int:
-    """
-    Calculate the number of working days needed to clean up debris.
-
-    Args:
-        debris_weight: Total weight of debris in tons
-        trucks_per_day: Number of trucks available per day
-        loading_time: Time to load each truck in hours (default: 1)
-        truck_capacity: Weight capacity of each truck in tons (default: 5)
-        travel_time_to_temp_depot: One-way travel time to depot in hours (default: 2)
-        working_hours_per_day: Number of working hours per day (default: 8)
-
-    Returns:
-        int: Number of working days needed, rounded up to the nearest day
-
-    Raises:
-        ValueError: If any input parameters are less than or equal to 0
-    """
     # Validate input parameters
     if any(param <= 0 for param in [
         debris_weight, trucks_per_day, loading_time,
