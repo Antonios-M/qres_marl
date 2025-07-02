@@ -1,7 +1,6 @@
 plots/
 .vscode/
 wandb/
-wandb/
 conda_env/
 imprl-infinite-horizon/examples/data/
 quake_envs_pkg/quake_envs/__pycache__/
