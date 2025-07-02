@@ -2,11 +2,11 @@
   <a href="https://pytorch.org/">
     <img src="https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=for-the-badge&logo=pytorch&logoColor=white" alt="PyTorch" />
   </a>&nbsp;&nbsp;
-  <a href="https://networkx.org/">
-    <img src="https://img.shields.io/badge/NetworkX-Python-blue?style=for-the-badge&logo=python&logoColor=white" alt="NetworkX" />
-  </a>&nbsp;&nbsp;
   <a href="https://gymnasium.farama.org/">
     <img src="https://img.shields.io/badge/Gymnasium-40c4ff?style=for-the-badge&logo=python&logoColor=white" alt="Gymnasium" />
+  </a>&nbsp;&nbsp;
+  <a href="https://networkx.org/">
+    <img src="https://img.shields.io/badge/NetworkX-Python-blue?style=for-the-badge&logo=python&logoColor=white" alt="NetworkX" />
   </a>&nbsp;&nbsp;
   <a href="https://numpy.org/">
     <img src="https://img.shields.io/badge/NumPy-013243?style=for-the-badge&logo=numpy&logoColor=white" alt="NumPy" />
