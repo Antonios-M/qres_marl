@@ -1,4 +1,11 @@
-## References
+# QRES-MARL: A Resilience-Based Multi-Agent Reinforcement Learning Framework for Post-Earthquake Recovery of Interdependent Infrastructures
+
+This repository provides means for analysing existing or custom infrastructure testbeds, predicting income losses, relocation costs, traffic delay costs and repair costs and uses MARL for finding near-optimal post-earthquake recovery strategies. The methods used to model and create testbeds as well as predict losses are novel, while the code for RL training is a minimally adapted version of Prateek Bhustali's IMPRL repository (see references). 
+
+The work was developed as part of my MSc Thesis in TU Delft and is intended for further use and developement in simillar research applications. Trained agent data on the testbeds used can be provided upon request. View the full pdf manuscript at [https://jmp.sh/k2yp2uBs]
+
+
+# References
 
 Code used for RL training is located in _imprl-infinite-horizon/_ and is a minimally adapted version of Prateek Bhustali's repository for RL in Inspection and Maintenance Planning:
 
