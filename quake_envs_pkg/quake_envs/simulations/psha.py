@@ -30,6 +30,9 @@ from matplotlib import cm
 from scipy.stats import norm
 from mpl_toolkits.basemap import Basemap
 
+## [ATTENTION] This code is not currently in use as it does not work as intended. The intended use is for probabilistic seismic hazard assessment.
+## this was made as a last effort during the latter part of the thesis but certain aspects of it are not yet resolved. If you want to use it, it needs
+## to be adapted to work properly. Please ensure you test and validate the code for PSHA upon changing it.
 
 def shp_to_oq_line(linestring: LineString) -> OQLine:
     return OQLine([OQPoint(x, y) for x, y in linestring.coords])
